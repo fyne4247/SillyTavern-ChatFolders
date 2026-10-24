@@ -6,6 +6,7 @@ import {
 import { extension_settings } from '../../../extensions.js';
 import { deleteGroupChatByName, getGroupAvatar, groups, openGroupById, openGroupChat } from '../../../group-chats.js';
 import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
+import { accountStorage } from '../../../util/AccountStorage.js';
 import { timestampToMoment } from '../../../utils.js';
 import { openWelcomeScreen } from '../../../welcome-screen.js';
 import {
@@ -189,6 +190,7 @@ async function renameChat(folder, chat) {
     try {
         const newName = await callGenericPopup('Enter the new name for the chat:', POPUP_TYPE.INPUT, chat.name);
         if (!newName || typeof newName !== 'string' || newName.trim() === '' || newName === chat.name) return;
+        const pinsBefore = readPins();
         if (folder.kind === 'group') {
             await renameGroupOrCharacterChat({ groupId: folder.groupId, oldFileName: chat.name, newFileName: newName, loader: false });
         } else {
@@ -199,6 +201,7 @@ async function renameChat(folder, chat) {
             // Keep the character's "last chat" pointer valid, but don't move it to a chat that wasn't current.
             if (wasCurrent) await updateRemoteChatName(id, newName);
         }
+        movePin(pinsBefore, folder, chat.name, newName.trim());
         await openWelcomeScreen({ force: true });
         toastr.success('Chat renamed.', 'Chat Folders');
     } catch (e) {
@@ -444,6 +447,84 @@ async function autoLinkMemoryBooks(folders, shouldContinue = () => true) {
     return linked;
 }
 
+// ---- pinned chats ----
+// SillyTavern's own store (welcome-screen.js PinnedChatsManager): accountStorage 'pinnedChats', a JSON object of
+// { key: { group, avatar, file_name } } kept in settings.json. Same key format, so stock pins and ours are the same pins.
+const PIN_STORE = 'pinnedChats';
+const PIN_FOLDER_KEY = 'p:pinned';
+let pinnedNow = new Set();
+/** @type {{root: HTMLElement, folders: object[]} | null} */
+let pinHost = null;
+
+function readPins() {
+    try {
+        const state = JSON.parse(accountStorage.getItem(PIN_STORE) || '{}');
+        return state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    } catch { return {}; }
+}
+const pinKeyOf = ({ group, avatar, file_name }) => `${group ? 'group_' + group : ''}${avatar ? 'char_' + avatar : ''}_${file_name}`;
+const pinOf = (folder, chat) => ({
+    group: folder.kind === 'group' ? folder.groupId : '',
+    avatar: folder.kind === 'character' ? folder.avatar : '',
+    file_name: `${chat.name}.jsonl`,
+});
+const pinnedKeys = () => new Set(Object.values(readPins()).filter(p => p && typeof p === 'object').map(pinKeyOf));
+
+function togglePin(folder, chat) {
+    const pin = pinOf(folder, chat);
+    const key = pinKeyOf(pin);
+    const state = { ...readPins() };
+    if (key in state) delete state[key]; else state[key] = pin;
+    accountStorage.setItem(PIN_STORE, JSON.stringify(state));
+    syncPins();
+}
+
+/** A rename moves the pin to the new file name (stock does this too, but from a cache that can be stale). */
+function movePin(before, folder, oldName, newName) {
+    const oldPin = pinOf(folder, { name: oldName });
+    const oldKey = pinKeyOf(oldPin);
+    if (!(oldKey in before)) return;
+    const state = { ...before };
+    const newPin = { ...oldPin, file_name: `${newName}.jsonl` };
+    delete state[oldKey];
+    state[pinKeyOf(newPin)] = newPin;
+    accountStorage.setItem(PIN_STORE, JSON.stringify(state));
+}
+
+function setPinMark(row, on) {
+    row.classList.toggle('isPinned', on);
+    const button = row.querySelector('.chatFoldersPinAction');
+    if (!button) return;
+    button.classList.toggle('chatFoldersPinOn', on);
+    button.title = on ? 'Unpin chat' : 'Pin chat';
+    button.setAttribute('aria-pressed', String(on));
+}
+
+/** Refresh every pin mark and rebuild the Pinned folder from the store. */
+function syncPins() {
+    if (!pinHost?.root.isConnected) return;
+    pinnedNow = pinnedKeys();
+    for (const row of pinHost.root.querySelectorAll('.chatFoldersChat[data-pin-key]')) setPinMark(row, pinnedNow.has(row.dataset.pinKey));
+    renderPinned(pinHost.root, pinHost.folders);
+}
+
+function renderPinned(root, folders, expanded = loadExpanded()) {
+    folderApi.delete(PIN_FOLDER_KEY);
+    root.querySelector(':scope > .chatFoldersPinned')?.remove();
+    const entries = [];
+    if (pinnedNow.size) {
+        for (const folder of folders) {
+            const walk = (list) => list.forEach((chat) => {
+                if (pinnedNow.has(pinKeyOf(pinOf(folder, chat)))) entries.push({ folder, chat });
+                walk(chat.children);
+            });
+            walk(folder.chats);
+        }
+    }
+    if (entries.length) root.querySelector(':scope > .chatFoldersSortRow-folders')?.after(renderPinnedFolder(entries, expanded));
+    updateFloat();
+}
+
 // ---- rendering ----
 function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -558,37 +639,45 @@ function updateAllButton(box, button, folder) {
     button.setAttribute('aria-expanded', String(open));
 }
 
-function renderChat(folder, chat, depth) {
+function renderChat(folder, chat, depth, flat = false) {
+    const kids = flat ? [] : chat.children; // the Pinned folder lists chats flat, without their branches
     const row = el('div', 'chatFoldersChat');
     row.style.setProperty('--cf-depth', String(depth));
     row.tabIndex = 0;
     row.setAttribute('role', 'button');
     row.dataset.chatName = chat.name;
     row.dataset.chatDate = fmtLong(chat.ms);
-    if (chat.children.length) row.setAttribute('aria-expanded', 'false');
-    row.title = chat.children.length
+    row.dataset.pinKey = pinKeyOf(pinOf(folder, chat));
+    if (kids.length) row.setAttribute('aria-expanded', 'false');
+    row.title = kids.length
         ? `${chat.name}\n${fmtLong(chat.ms)}\nClick to expand branches; double-click to open chat. Press Space to toggle; Enter to open.`
         : `${chat.name}\n${fmtLong(chat.ms)}\nClick or press Enter to open chat.`;
     const name = el('div', 'chatFoldersChatName');
-    if (chat.children.length) {
+    name.append(Object.assign(el('i', 'fa-solid fa-thumbtack fa-xs chatFoldersPinMark'), { title: 'Pinned chat' }));
+    if (kids.length) {
         const caret = el('i', 'fa-solid fa-chevron-right fa-fw chatFoldersBranchCaret');
         caret.tabIndex = 0;
         caret.setAttribute('role', 'button');
         name.append(caret);
     }
     if (depth > 0) name.append(Object.assign(el('i', 'fa-solid fa-code-branch fa-xs'), { title: 'Branch / checkpoint' }), ' ');
+    if (flat) name.append(pinnedAvatar(folder), el('strong', 'chatFoldersPinnedChar', folder.name), ' \u2013 ');
     name.append(chat.name);
-    const lore = folder.kind === 'character'
+    const lore = folder.kind === 'character' && !flat
         ? lorebookSelect(chat.lorebook, 'Chat lorebook', chat.name, (n) => setChatLorebook(folder, chat, n), { folder, chat })
         : el('span');
     const meta = el('div', 'chatFoldersMeta');
     meta.append(stat('<i class="fa-solid fa-comment fa-xs"></i>', chat.count, 'Messages'), el('small', 'chatFoldersDate', fmtDate(chat.ms)));
     const actions = el('div', 'chatFoldersActions');
+    const pinButton = actionButton('fa-thumbtack', 'Pin chat', () => togglePin(folder, chat));
+    pinButton.classList.add('chatFoldersPinAction');
     actions.append(
+        pinButton,
         actionButton('fa-pen', 'Rename chat', () => renameChat(folder, chat)),
         actionButton('fa-trash-can', 'Delete chat', () => deleteChat(folder, chat)),
     );
     row.append(name, lore, el('span', 'chatFoldersSpacer'), meta, actions); // spacer sits under the header's thread count
+    setPinMark(row, pinnedNow.has(row.dataset.pinKey));
     const go = () => openChat(folder, chat.name);
     const isProtectedTarget = (target) => target instanceof Element && !!target.closest(
         '.chatFoldersBranchCaret, .chatFoldersActions, .chatFoldersLore, button, select, input, textarea, a',
@@ -596,7 +685,7 @@ function renderChat(folder, chat, depth) {
     row.addEventListener('click', (event) => {
         if (event.target instanceof Element && event.target.closest('.chatFoldersBranchCaret')) return;
         if (isProtectedTarget(event.target)) return;
-        if (!chat.children.length) { if (event.detail <= 1) go(); return; }
+        if (!kids.length) { if (event.detail <= 1) go(); return; }
         event.preventDefault();
         const node = row.parentElement;
         rowGestures.handle(row, event.detail, {
@@ -612,7 +701,7 @@ function renderChat(folder, chat, depth) {
         else if (event.key === ' ') {
             event.preventDefault();
             rowGestures.cancel(row);
-            if (chat.children.length) {
+            if (kids.length) {
                 const node = row.parentElement;
                 setBranchOpen(folder, chat, node, !node.classList.contains('open'));
             } else go();
@@ -759,6 +848,80 @@ function renderFolder(folder, expandedState) {
     return box;
 }
 
+function pinnedAvatar(folder) {
+    if (folder.kind === 'group') return Object.assign(el('i', 'fa-solid fa-user-group fa-xs chatFoldersPinnedAvatar'), { title: folder.name });
+    const img = el('img', 'chatFoldersPinnedAvatar');
+    img.src = getThumbnailUrl('avatar', folder.avatar);
+    img.alt = folder.name;
+    return img;
+}
+
+/** The Pinned folder: every pinned chat from every character, flat, ordered by the shared chat sort. */
+function renderPinnedFolder(entries, expandedState) {
+    const owner = new Map(entries.map(({ folder, chat }) => [chat, folder]));
+    const chats = entries.map(({ chat }) => chat);
+    const box = el('div', 'chatFoldersFolder chatFoldersPinned');
+    const head = el('div', 'chatFoldersHeader');
+    head.tabIndex = 0;
+    head.setAttribute('role', 'button');
+    const carets = el('span', 'chatFoldersCarets');
+    carets.append(el('i', 'fa-solid fa-chevron-right fa-fw chatFoldersCaret'));
+    const icon = el('div', 'chatFoldersPinnedIcon');
+    icon.append(el('i', 'fa-solid fa-thumbtack fa-fw'));
+    const info = el('div', 'chatFoldersInfo');
+    info.append(el('strong', 'chatFoldersName', 'Pinned conversations'));
+    const lastMs = chats.reduce((m, c) => Math.max(m, c.ms), 0);
+    const date = el('small', 'chatFoldersDate', fmtDate(lastMs));
+    date.title = fmtLong(lastMs);
+    const meta = el('div', 'chatFoldersMeta');
+    meta.append(
+        stat(SPOOL_SVG, chats.length, 'Pinned chats'),
+        stat('<i class="fa-solid fa-comment fa-xs"></i>', chats.reduce((n, c) => n + c.count, 0), 'Total messages'),
+        date,
+    );
+    head.append(carets, icon, info, el('span'), meta, el('span', 'chatFoldersSpacer'));
+
+    const body = el('div', 'chatFoldersBody');
+    const tree = el('div', 'chatFoldersTree');
+    let sortMode = settings().chatSort;
+    const sortHead = sortHeaderRow('chats', sortMode, setSharedChatSort);
+    body.append(sortHead, tree);
+    let filled = false;
+    const fill = () => {
+        tree.replaceChildren();
+        for (const chat of sortChatSiblings(chats, sortMode)) {
+            const node = el('div', 'chatFoldersBranchNode');
+            node.dataset.chat = chat.name;
+            node.append(renderChat(owner.get(chat), chat, 0, true));
+            tree.append(node);
+        }
+        filled = true;
+    };
+    const applyChatSort = (value) => {
+        sortMode = CHAT_SORTS.includes(value) ? value : 'recent';
+        syncSortHeader(sortHead, sortMode);
+        if (filled) fill();
+    };
+    const setOpen = (open, persist) => {
+        box.classList.toggle('open', open);
+        head.setAttribute('aria-expanded', String(open));
+        if (open && !filled) fill();
+        if (persist) {
+            const st = loadExpanded();
+            if (open) st[PIN_FOLDER_KEY] = 1; else delete st[PIN_FOLDER_KEY];
+            saveExpanded(st);
+        }
+        updateFloat();
+    };
+    const toggle = () => setOpen(!box.classList.contains('open'), true);
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    box.append(head, body);
+    setOpen(!!expandedState[PIN_FOLDER_KEY], false);
+    folderApi.set(PIN_FOLDER_KEY, { setOpen, applyChatSort, box, folder: null });
+    return box;
+}
+
 /** Small tags next to the character name: additional character books and a Memory Books lock. */
 function characterLoreTags(folder) {
     const tags = [];
@@ -784,6 +947,7 @@ function renderInto(root, folders) {
     const st = loadExpanded();
     if (st.__expandAll) {
         for (const folder of folders) st[folder.key] = 1;
+        st[PIN_FOLDER_KEY] = 1;
         delete st.__expandAll;
         saveExpanded(st);
     }
@@ -798,10 +962,13 @@ function renderInto(root, folders) {
         }
     });
     root.append(folderSortHead);
-    if (!folders.length) { root.append(el('div', 'chatFoldersEmpty', 'No chats')); updateFloat(); return; }
+    pinHost = { root, folders };
+    pinnedNow = pinnedKeys();
+    if (!folders.length) { root.append(el('div', 'chatFoldersEmpty', 'No chats')); applyFloatPosition(); return; }
     const expanded = loadExpanded();
     for (const folder of sortFolders(folders, settings().folderSort)) root.append(renderFolder(folder, expanded));
-    updateFloat();
+    renderPinned(root, folders, expanded);
+    applyFloatPosition();
 }
 
 function refreshLorebookSelects(root, folders) {
@@ -907,6 +1074,7 @@ function scan() {
         }
         void enhance(p);
     });
+    applyFloatPosition();
 }
 
 function disable() {
@@ -920,16 +1088,19 @@ function disable() {
         panelRoots.delete(p);
         startupPipeline.invalidate(p);
     });
+    pinHost = null;
     updateFloat();
+    applyFloatPosition();
 }
 
 const FLOAT_KEY = 'ST-ChatFolders.floatPosition';
-const FLOAT_SIZE = 36;
+const FLOAT_SIZE = 32;
 const FLOAT_MARGIN = 12;
-const FLOAT_RIGHT = 18;
-const FLOAT_BOTTOM = 160;
+const FLOAT_HOME_INSET = 4; // default spot: just inside the top-left corner of the Recent Chats list
+const FLOAT_HOME_CLASS = 'chatfolders-float-home'; // on <body> while the button sits at its default spot
 let floatButton = null;
 let floatDrag = null;
+let floatFrame = 0;
 
 function folderRecordOpen(st) {
     return Object.entries(st).some(([key, value]) => value && (key.startsWith('c:') || key.startsWith('g:')));
@@ -969,8 +1140,8 @@ function updateFloat() {
     if (!floatButton) return;
     const open = anyFolderOpen();
     const icon = floatButton.querySelector('i');
-    icon.classList.toggle('fa-angles-up', open);
-    icon.classList.toggle('fa-angles-down', !open);
+    icon.classList.toggle('fa-folder-minus', open);
+    icon.classList.toggle('fa-folder-plus', !open);
     const action = open ? 'Collapse all folders' : 'Expand all folders';
     floatButton.title = `${action}. Drag to move.`;
     floatButton.setAttribute('aria-label', action);
@@ -986,11 +1157,18 @@ function readFloatPosition() {
     }
 }
 
+function homeFloatPosition() {
+    const list = document.querySelector('.' + ROOT_CLASS);
+    if (!list?.isConnected) return null;
+    const rect = list.getBoundingClientRect();
+    return { left: rect.left + FLOAT_HOME_INSET, top: rect.top + FLOAT_HOME_INSET };
+}
+
 function clampFloat(position) {
     const maxLeft = Math.max(FLOAT_MARGIN, window.innerWidth - FLOAT_SIZE - FLOAT_MARGIN);
     const maxTop = Math.max(FLOAT_MARGIN, window.innerHeight - FLOAT_SIZE - FLOAT_MARGIN);
-    const left = Number.isFinite(Number(position?.left)) ? Number(position.left) : window.innerWidth - FLOAT_SIZE - FLOAT_RIGHT;
-    const top = Number.isFinite(Number(position?.top)) ? Number(position.top) : window.innerHeight - FLOAT_SIZE - FLOAT_BOTTOM;
+    const left = Number.isFinite(Number(position?.left)) ? Number(position.left) : FLOAT_MARGIN;
+    const top = Number.isFinite(Number(position?.top)) ? Number(position.top) : FLOAT_MARGIN;
     return {
         left: Math.round(Math.min(maxLeft, Math.max(FLOAT_MARGIN, left))),
         top: Math.round(Math.min(maxTop, Math.max(FLOAT_MARGIN, top))),
@@ -999,7 +1177,11 @@ function clampFloat(position) {
 
 function applyFloatPosition() {
     if (!floatButton) return;
-    const position = clampFloat(readFloatPosition() || {});
+    const saved = readFloatPosition();
+    const home = saved ? null : homeFloatPosition();
+    document.body.classList.toggle(FLOAT_HOME_CLASS, !!home);
+    floatButton.hidden = !saved && !home; // the default spot belongs to the list, so no list means nothing to anchor to
+    const position = clampFloat(saved || home || {});
     floatButton.style.left = `${position.left}px`;
     floatButton.style.top = `${position.top}px`;
 }
@@ -1031,6 +1213,7 @@ function onFloatUp() {
     try { localStorage.setItem(FLOAT_KEY, JSON.stringify(position)); } catch { /* stays where it was dropped */ }
     floatButton.dataset.dragged = 'true';
     setTimeout(() => { if (floatButton) delete floatButton.dataset.dragged; }, 0);
+    applyFloatPosition();
 }
 
 function ensureFloat() {
@@ -1039,7 +1222,7 @@ function ensureFloat() {
     button.type = 'button';
     button.id = 'chatfolders-float';
     button.className = 'chatfolders-float interactable';
-    button.append(Object.assign(el('i', 'fa-solid fa-angles-down'), { ariaHidden: 'true' }));
+    button.append(Object.assign(el('i', 'fa-solid fa-folder-plus'), { ariaHidden: 'true' }));
     button.addEventListener('pointerdown', (event) => {
         if (event.button !== undefined && event.button !== 0) return;
         event.preventDefault();
@@ -1066,6 +1249,11 @@ function ensureFloat() {
     applyFloatPosition();
     updateFloat();
     window.addEventListener('resize', applyFloatPosition);
+    // The default spot follows the list as the welcome screen scrolls.
+    document.getElementById('chat')?.addEventListener('scroll', () => {
+        if (floatFrame) return;
+        floatFrame = requestAnimationFrame(() => { floatFrame = 0; applyFloatPosition(); });
+    }, { passive: true });
     return button;
 }
 

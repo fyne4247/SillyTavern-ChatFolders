@@ -12,7 +12,7 @@
     --cf-name: minmax(9em, 1fr);
     --cf-count: 5.3em;
     --cf-date: 6.6em;
-    --cf-actions: 3.2em;
+    --cf-actions: 4.8em;
     display: flex; flex-direction: column; gap: 4px; width: 100%;
     container-type: inline-size; container-name: chatfolders;
     font-size: var(--cf-font);
@@ -102,7 +102,7 @@
 }
 
 @media screen and (max-width: 600px) {
-    .chatfolders-root { --cf-pad: 6px; --cf-count: 4.6em; --cf-date: 6.4em; --cf-actions: 3.2em; }
+    .chatfolders-root { --cf-pad: 6px; --cf-count: 4.6em; --cf-date: 6.4em; --cf-actions: 4.8em; }
     /* header: name on line 1, counts on line 2, lorebook on line 3 */
     .chatFoldersHeader { grid-template-columns: auto auto minmax(0, 1fr) var(--cf-count) var(--cf-count) var(--cf-date) var(--cf-actions); row-gap: 3px; }
     .chatFoldersHeader .chatFoldersCarets, .chatFoldersHeader .avatar { grid-row: 1 / span 3; }
@@ -127,24 +127,34 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     padding: 0;
-    border-radius: 999px;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    border: 2px solid var(--SmartThemeQuoteColor);
     background-color: var(--SmartThemeBlurTintColor);
-    color: var(--SmartThemeQuoteColor);
-    box-shadow:
-        0 2px 8px var(--SmartThemeShadowColor),
-        0 0 0 1px var(--SmartThemeBorderColor);
+    color: var(--SmartThemeBodyColor);
+    box-shadow: 0 1px 4px var(--SmartThemeShadowColor);
     cursor: grab;
-    opacity: 0.82;
+    opacity: 0.92;
     touch-action: none;
     user-select: none;
 }
-.chatfolders-float:hover { opacity: 1; filter: brightness(1.1); }
+.chatfolders-float[hidden] { display: none; }
+.chatfolders-float:hover { opacity: 1; filter: brightness(1.15); }
 .chatfolders-float:active { cursor: grabbing; }
-.chatfolders-float i { pointer-events: none; font-size: 16px; }
+.chatfolders-float i { pointer-events: none; font-size: 15px; }
+/* At its default spot the button sits over the empty corner of the folder column headers: keep "Character" clear of it. */
+body.chatfolders-float-home .chatFoldersSortRow-folders { padding-left: calc(var(--cf-pad) + 22px); }
+
+/* pinned chats */
+.chatFoldersPinMark { display: none; margin-right: 4px; opacity: 0.8; color: var(--SmartThemeQuoteColor); }
+.chatFoldersChat.isPinned .chatFoldersPinMark { display: inline; }
+.chatFoldersPinAction.chatFoldersPinOn { opacity: 1; color: var(--SmartThemeQuoteColor); }
+.chatFoldersPinnedIcon { display: inline-flex; align-items: center; justify-content: center; width: 2em; color: var(--SmartThemeQuoteColor); }
+.chatFoldersPinnedAvatar { width: 1.6em; height: 1.6em; margin-right: 6px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
+i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
+.chatFoldersPinnedChar { margin-right: 2px; }
 
 /* Column headers provide native buttons, so each list can sort without a dropdown. */
 .chatFoldersSortRow {
