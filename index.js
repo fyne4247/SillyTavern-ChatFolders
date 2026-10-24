@@ -21,7 +21,7 @@ import {
 
 const TAG = '[ChatFolders]';
 const SETTINGS_KEY = 'chatFolders';
-const LS_KEY = 'ST-ChatFolders.expanded';
+const LS_KEY = 'SillyTavern-ChatFolders.expanded';
 const ENHANCED = 'chatfolders-on'; // class added to .welcomePanel while our list replaces the original
 const ROOT_CLASS = 'chatfolders-root';
 
@@ -35,7 +35,10 @@ function ensureStartupStyle() {
 
 const settings = () => {
     const s = (extension_settings[SETTINGS_KEY] ??= { enabled: true });
-    s.linkMemoryBooks ??= true;
+    // linkMemoryBooks stays unset until the user answers the one-time question (askMemoryBooksOnce).
+    s.showPinned ??= true;
+    s.showFloat ??= true;
+    s.confirmDelete ??= true;
     if (!FOLDER_SORTS.includes(s.folderSort)) s.folderSort = 'recent';
     if (!CHAT_SORTS.includes(s.chatSort)) s.chatSort = 'recent';
     return s;
@@ -187,21 +190,40 @@ async function openChat(folder, chatName) {
 }
 
 // ---- rename / delete (mirror renameRecent*/deleteRecent* in welcome-screen.js, which are not exported) ----
-const countChats = (list) => list.reduce((n, c) => n + 1 + countChats(c.children), 0);
+
+async function listChatNames(avatar) {
+    const res = await fetch('/api/characters/chats', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ avatar_url: avatar, simple: true }) });
+    const list = res.ok ? await res.json() : [];
+    return Array.isArray(list) ? list.map(x => x.file_id) : [];
+}
 
 async function renameChat(folder, chat) {
     try {
-        const newName = await callGenericPopup('Enter the new name for the chat:', POPUP_TYPE.INPUT, chat.name);
-        if (!newName || typeof newName !== 'string' || newName.trim() === '' || newName === chat.name) return;
+        const typed = await callGenericPopup('Enter the new name for the chat:', POPUP_TYPE.INPUT, chat.name);
+        const newName = typeof typed === 'string' ? typed.trim() : '';
+        if (!newName || newName === chat.name) return;
+        if (newName.localeCompare(chat.name, undefined, { sensitivity: 'base' }) === 0) {
+            // Core refuses these too: on case-insensitive disks it would be the same file.
+            toastr.warning('Name not accepted, as it is the same as before (ignoring case and accents).', 'Chat Folders');
+            return;
+        }
         if (folder.kind === 'group') {
             await renameGroupOrCharacterChat({ groupId: folder.groupId, oldFileName: chat.name, newFileName: newName, loader: false });
         } else {
             const id = characters.findIndex(x => x.avatar === folder.avatar);
             if (id === -1) throw new Error('character not found: ' + folder.avatar);
             const wasCurrent = characters[id].chat === chat.name;
+            const before = await listChatNames(folder.avatar);
             await renameGroupOrCharacterChat({ characterId: String(id), oldFileName: chat.name, newFileName: newName, loader: false });
-            // Keep the character's "last chat" pointer valid, but don't move it to a chat that wasn't current.
-            if (wasCurrent) await updateRemoteChatName(id, newName);
+            // The server may sanitize the name, and core reports its own errors, so look at what's on disk now.
+            const after = await listChatNames(folder.avatar);
+            const actual = after.find(n => !before.includes(n));
+            if (!actual || after.includes(chat.name)) {
+                await openWelcomeScreen({ force: true });
+                return;
+            }
+            // Core moves the "last chat" pointer only for the active character; keep it valid for the others.
+            if (wasCurrent && String(id) !== String(this_chid)) await updateRemoteChatName(id, actual);
         }
         await openWelcomeScreen({ force: true });
         toastr.success('Chat renamed.', 'Chat Folders');
@@ -213,10 +235,6 @@ async function renameChat(folder, chat) {
 
 async function deleteChat(folder, chat) {
     try {
-        const branches = countChats(chat.children);
-        const warn = branches
-            ? `<p>It has ${branches} branch${branches === 1 ? '' : 'es'} linked to it. They are kept, but their "Back to main chat" link will point at nothing.</p>`
-            : '';
         const box = document.createElement('div');
         const title = document.createElement('h3');
         title.textContent = 'Are you sure?';
@@ -224,9 +242,7 @@ async function deleteChat(folder, chat) {
         what.append('Delete ', Object.assign(document.createElement('b'), { textContent: chat.name }),
             ` (${chat.count} messages) from ${folder.name}? This can't be undone.`);
         box.append(title, what);
-        box.insertAdjacentHTML('beforeend', warn);
-        const ok = await callGenericPopup(box, POPUP_TYPE.CONFIRM, '', { okButton: 'Delete', cancelButton: 'Cancel' });
-        if (!ok) return;
+        if (settings().confirmDelete && !await callGenericPopup(box, POPUP_TYPE.CONFIRM, '', { okButton: 'Delete', cancelButton: 'Cancel' })) return;
         if (folder.kind === 'group') {
             await deleteGroupChatByName(folder.groupId, chat.name);
         } else {
@@ -524,7 +540,7 @@ function renderPinned(root, folders, expanded = loadExpanded()) {
     folderApi.delete(PIN_FOLDER_KEY);
     root.querySelector(':scope > .chatFoldersPinned')?.remove();
     const entries = [];
-    if (pinnedNow.size) {
+    if (pinnedNow.size && settings().showPinned) {
         for (const folder of folders) {
             const walk = (list) => list.forEach((chat) => {
                 if (pinnedNow.has(pinKeyOf(pinOf(folder, chat)))) entries.push({ folder, chat });
@@ -1091,7 +1107,7 @@ function disable() {
     applyFloatPosition();
 }
 
-const FLOAT_KEY = 'ST-ChatFolders.floatPosition';
+const FLOAT_KEY = 'SillyTavern-ChatFolders.floatPosition';
 const FLOAT_SIZE = 32;
 const FLOAT_MARGIN = 12;
 const FLOAT_HOME_INSET = 4; // default spot: just inside the top-left corner of the Recent Chats list
@@ -1179,7 +1195,7 @@ function applyFloatPosition() {
     const home = saved ? null : homeFloatPosition();
     document.body.classList.toggle(FLOAT_HOME_CLASS, !!home);
     // Expand/collapse only means something while the folder list is on screen.
-    floatButton.hidden = !document.querySelector('.' + ROOT_CLASS)?.isConnected;
+    floatButton.hidden = !settings().showFloat || !document.querySelector('.' + ROOT_CLASS)?.isConnected;
     const position = clampFloat(saved || home || {});
     floatButton.style.left = `${position.left}px`;
     floatButton.style.top = `${position.top}px`;
@@ -1257,6 +1273,11 @@ function ensureFloat() {
 }
 
 function addSettingsUi() {
+    const check = (id, text) => `
+                <label class="checkbox_label" for="${id}">
+                    <input id="${id}" type="checkbox" />
+                    <span>${text}</span>
+                </label>`;
     const html = `
     <div class="chatfolders-settings">
         <div class="inline-drawer">
@@ -1265,36 +1286,67 @@ function addSettingsUi() {
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
-                <label class="checkbox_label" for="chatfolders_enabled">
-                    <input id="chatfolders_enabled" type="checkbox" />
-                    <span>Group Recent Chats on the welcome screen into one folder per character</span>
-                </label>
+                ${check('chatfolders_enabled', 'Group Recent Chats on the welcome screen into one folder per character')}
                 <small>When off, SillyTavern's original list is shown.</small>
-                <label class="checkbox_label" for="chatfolders_linkmb">
-                    <input id="chatfolders_linkmb" type="checkbox" />
-                    <span>If Memory Books has a book for a character or chat that has no lorebook, link it as the lorebook</span>
-                </label>
+                ${check('chatfolders_pinned', 'Show a Pinned conversations folder at the top')}
+                ${check('chatfolders_float', 'Show the floating expand/collapse-all button')}
+                <div class="menu_button menu_button_icon" id="chatfolders_float_reset" title="Put the floating button back in the corner of the list">
+                    <i class="fa-solid fa-arrows-to-dot"></i><span>Reset button position</span>
+                </div>
+                ${check('chatfolders_confirmdelete', 'Ask before deleting a chat')}
+                ${check('chatfolders_linkmb', 'If Memory Books has a book for a character or chat that has no lorebook, link it as the lorebook')}
+                <small>Needs Memory Books. Linking saves the lorebook into those chats' files.</small>
             </div>
         </div>
     </div>`;
     const target = document.getElementById('extensions_settings2') ?? document.getElementById('extensions_settings');
     if (!target) return;
     target.insertAdjacentHTML('beforeend', html);
-    const box = document.getElementById('chatfolders_enabled');
-    box.checked = !!settings().enabled;
-    const linkBox = document.getElementById('chatfolders_linkmb');
-    linkBox.checked = !!settings().linkMemoryBooks;
-    linkBox.addEventListener('change', () => { settings().linkMemoryBooks = linkBox.checked; saveSettingsDebounced(); });
-    box.addEventListener('change', () => {
-        settings().enabled = box.checked;
-        saveSettingsDebounced();
-        if (box.checked) scan(); else disable();
+    const bind = (id, key, after = () => {}) => {
+        const box = document.getElementById(id);
+        box.checked = !!settings()[key];
+        box.addEventListener('change', () => { settings()[key] = box.checked; saveSettingsDebounced(); after(box.checked); });
+    };
+    bind('chatfolders_enabled', 'enabled', on => { if (on) scan(); else disable(); });
+    bind('chatfolders_pinned', 'showPinned', () => syncPins());
+    bind('chatfolders_float', 'showFloat', () => applyFloatPosition());
+    bind('chatfolders_confirmdelete', 'confirmDelete');
+    bind('chatfolders_linkmb', 'linkMemoryBooks');
+    document.getElementById('chatfolders_float_reset').addEventListener('click', () => {
+        try { localStorage.removeItem(FLOAT_KEY); } catch { /* nothing saved */ }
+        applyFloatPosition();
     });
+}
+
+/** Memory Books linking writes into chat files, so it's opt-in: ask once, the first time Memory Books is seen. */
+async function askMemoryBooksOnce() {
+    const s = settings();
+    if (s.linkMemoryBooks !== undefined || !mbEnabled()) return;
+    const yes = await callGenericPopup(
+        '<h3>Chat Folders + Memory Books</h3><p>Memory Books is installed. When a character or chat has a Memory Book but no lorebook, should Chat Folders link that book as its lorebook?</p><p><small>This saves the lorebook into those chats. You can change it later in the extension settings.</small></p>',
+        POPUP_TYPE.CONFIRM, '', { okButton: 'Link them', cancelButton: 'No thanks' });
+    s.linkMemoryBooks = !!yes;
+    saveSettingsDebounced();
+    const box = document.getElementById('chatfolders_linkmb');
+    if (box) box.checked = s.linkMemoryBooks;
+    if (s.linkMemoryBooks && !getCurrentChatId()) await openWelcomeScreen({ force: true });
+}
+
+/** 1.6 and older named these keys after the old folder name. */
+function migrateStorageKeys() {
+    for (const [from, to] of [['ST-ChatFolders.expanded', LS_KEY], ['ST-ChatFolders.floatPosition', FLOAT_KEY]]) {
+        try {
+            const value = localStorage.getItem(from);
+            if (value !== null && localStorage.getItem(to) === null) localStorage.setItem(to, value);
+            localStorage.removeItem(from);
+        } catch { /* storage unavailable */ }
+    }
 }
 
 (function init() {
     try {
         settings();
+        migrateStorageKeys();
         ensureStartupStyle();
         ensureFloat();
         addSettingsUi();
@@ -1306,6 +1358,7 @@ function addSettingsUi() {
             new MutationObserver(() => scan()).observe(chatEl, { childList: true });
         }
         eventSource.on(event_types.APP_READY, scan);
+        eventSource.on(event_types.APP_READY, askMemoryBooksOnce);
         eventSource.makeLast(event_types.CHAT_RENAMED, onChatRenamed);
         scan();
         console.log(TAG, 'loaded');
