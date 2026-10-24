@@ -45,15 +45,18 @@ In **Extensions → Chat Folders**:
 | Floating expand/collapse-all button | On | Hide the floating button |
 | Reset button position | | Puts the floating button back in the corner of the list |
 | Ask before deleting a chat | On | Turn off to delete without a confirmation |
-| Link Memory Books as lorebooks | Asked once | See below |
+| Link Memory Books as lorebooks | Asked when needed | Manual Lorebook Mode only; see below |
 
 ## Memory Books (optional)
 
-Everything works without Memory Books. If it is installed and enabled:
+Everything works without Memory Books, and most Memory Books users won't notice anything: normally Memory Books writes memories into the chat's own lorebook, so there's nothing for Chat Folders to do.
 
-- The first time Chat Folders sees it, it asks whether to **link Memory Books' books as lorebooks**. If you say yes, a character or chat that has a Memory Book but no lorebook gets that book set as its lorebook. This is saved into those chats' files. Choosing "None" for a chat is remembered, and that chat won't be linked again.
+The extra features only matter in Memory Books' **Manual Lorebook Mode**:
+
+- If some chats have a manual-mode Memory Book but no lorebook, Chat Folders asks once whether to **link those books as their lorebooks**. Saying yes saves the lorebook into those chats. Choosing "None" for a chat is remembered, and it won't be linked again. Characters with a Memory Books lock get their locked book the same way.
+- Picking a lorebook in Chat Folders also points Memory Books at that book.
+- Linking follows manual mode live: turn manual mode off and it stops, turn it back on and it picks up again with your earlier answer.
 - Characters with a Memory Books lock show a lock tag.
-- In Memory Books' manual mode, picking a lorebook here also points Memory Books at that book.
 
 ## Good to know
 

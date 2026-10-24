@@ -35,7 +35,7 @@ function ensureStartupStyle() {
 
 const settings = () => {
     const s = (extension_settings[SETTINGS_KEY] ??= { enabled: true });
-    // linkMemoryBooks stays unset until the user answers the one-time question (askMemoryBooksOnce).
+    // linkMemoryBooks stays unset until the user answers the one-time question (askMemoryBooks).
     s.showPinned ??= true;
     s.showFloat ??= true;
     s.confirmDelete ??= true;
@@ -427,37 +427,58 @@ function lorebookSelect(current, title, suggested, onPick, editTarget) {
  * linked there, link that book. Skips books that no longer exist and the open chat's in-memory edit races.
  * @returns {Promise<number>} how many links were made
  */
-async function autoLinkMemoryBooks(folders, shouldContinue = () => true) {
-    if (!settings().linkMemoryBooks || !mbEnabled()) return 0;
+/**
+ * What Memory Books auto-linking would change: characters with a Memory Books lock but no lorebook, and chats with
+ * a manual-mode Memory Book but no lorebook. Both only exist in Memory Books' manual mode; otherwise Memory Books
+ * writes into the chat's own lorebook and there is nothing to link.
+ */
+function linkCandidates(folders) {
     const exists = (n) => !!n && (world_names ?? []).includes(n);
-    let linked = 0;
+    const found = [];
     for (const folder of folders) {
-        if (!shouldContinue()) break;
         if (folder.kind !== 'character') continue;
         const lockBook = mbLock(folder.avatar)?.lorebookName;
-        if (!primaryBook(folder) && exists(lockBook) && !settings().noLorebook?.[folder.avatar]) {
-            const version = lorebookEditVersion(folder);
-            try {
-                if (await setCharacterLorebook(folder, lockBook, { syncMemoryBook: false, expectedVersion: version, shouldContinue })) {
-                    linked++; console.log(TAG, 'linked character', folder.name, '->', lockBook);
-                }
-            } catch (e) { console.warn(TAG, 'auto-link failed for', folder.name, e); }
-        }
-        const walk = async (list) => {
-            for (const chat of list) {
-                if (!shouldContinue()) return;
-                if (!chat.lorebook && !chat.noLorebook && exists(chat.memoryBook)) {
-                    const version = lorebookEditVersion(folder, chat.name);
-                    try {
-                        if (await setChatLorebook(folder, chat, chat.memoryBook, { syncMemoryBook: false, expectedVersion: version, shouldContinue, automatic: true })) {
-                            linked++; console.log(TAG, 'linked chat', chat.name, '->', chat.memoryBook);
-                        }
-                    } catch (e) { console.warn(TAG, 'auto-link failed for', chat.name, e); }
-                }
-                await walk(chat.children);
-            }
-        };
-        await walk(folder.chats);
+        if (!primaryBook(folder) && exists(lockBook) && !settings().noLorebook?.[folder.avatar]) found.push({ folder, book: lockBook });
+        const walk = (list) => list.forEach((chat) => {
+            if (!chat.lorebook && !chat.noLorebook && exists(chat.memoryBook)) found.push({ folder, chat, book: chat.memoryBook });
+            walk(chat.children);
+        });
+        walk(folder.chats);
+    }
+    return found;
+}
+
+let askingMemoryBooks = null;
+/** Linking writes into chat files, so it's opt-in. Asked once, the first time there is something to link. */
+function askMemoryBooks() {
+    askingMemoryBooks ??= (async () => {
+        const yes = await callGenericPopup(
+            '<h3>Chat Folders + Memory Books</h3><p>Some chats have a Memory Book from manual lorebook mode but no lorebook. Should Chat Folders link those books as their lorebooks?</p><p><small>This saves the lorebook into those chats. It only happens while Memory Books\' manual mode is on. You can change it later in the extension settings.</small></p>',
+            POPUP_TYPE.CONFIRM, '', { okButton: 'Link them', cancelButton: 'No thanks' });
+        settings().linkMemoryBooks = !!yes;
+        saveSettingsDebounced();
+        const box = document.getElementById('chatfolders_linkmb');
+        if (box) box.checked = settings().linkMemoryBooks;
+    })().finally(() => { askingMemoryBooks = null; });
+    return askingMemoryBooks;
+}
+
+async function autoLinkMemoryBooks(folders, shouldContinue = () => true) {
+    // Follows Memory Books' manual mode live: switching it off pauses linking without touching the user's answer.
+    if (!mbManual()) return 0;
+    const candidates = linkCandidates(folders);
+    if (!candidates.length) return 0;
+    if (settings().linkMemoryBooks === undefined) await askMemoryBooks();
+    if (!settings().linkMemoryBooks) return 0;
+    let linked = 0;
+    for (const { folder, chat, book } of candidates) {
+        if (!shouldContinue()) break;
+        try {
+            const done = chat
+                ? await setChatLorebook(folder, chat, book, { syncMemoryBook: false, expectedVersion: lorebookEditVersion(folder, chat.name), shouldContinue, automatic: true })
+                : await setCharacterLorebook(folder, book, { syncMemoryBook: false, expectedVersion: lorebookEditVersion(folder), shouldContinue });
+            if (done) { linked++; console.log(TAG, 'linked', chat ? 'chat' : 'character', chat?.name ?? folder.name, '->', book); }
+        } catch (e) { console.warn(TAG, 'auto-link failed for', chat?.name ?? folder.name, e); }
     }
     if (linked) toastr.info(`Linked ${linked} Memory Book${linked === 1 ? '' : 's'} as lorebook${linked === 1 ? '' : 's'}.`, 'Chat Folders');
     return linked;
@@ -1295,7 +1316,7 @@ function addSettingsUi() {
                 </div>
                 ${check('chatfolders_confirmdelete', 'Ask before deleting a chat')}
                 ${check('chatfolders_linkmb', 'If Memory Books has a book for a character or chat that has no lorebook, link it as the lorebook')}
-                <small>Needs Memory Books. Linking saves the lorebook into those chats' files.</small>
+                <small>Only used while Memory Books' Manual Lorebook Mode is on. Linking saves the lorebook into those chats' files.</small>
             </div>
         </div>
     </div>`;
@@ -1316,20 +1337,6 @@ function addSettingsUi() {
         try { localStorage.removeItem(FLOAT_KEY); } catch { /* nothing saved */ }
         applyFloatPosition();
     });
-}
-
-/** Memory Books linking writes into chat files, so it's opt-in: ask once, the first time Memory Books is seen. */
-async function askMemoryBooksOnce() {
-    const s = settings();
-    if (s.linkMemoryBooks !== undefined || !mbEnabled()) return;
-    const yes = await callGenericPopup(
-        '<h3>Chat Folders + Memory Books</h3><p>Memory Books is installed. When a character or chat has a Memory Book but no lorebook, should Chat Folders link that book as its lorebook?</p><p><small>This saves the lorebook into those chats. You can change it later in the extension settings.</small></p>',
-        POPUP_TYPE.CONFIRM, '', { okButton: 'Link them', cancelButton: 'No thanks' });
-    s.linkMemoryBooks = !!yes;
-    saveSettingsDebounced();
-    const box = document.getElementById('chatfolders_linkmb');
-    if (box) box.checked = s.linkMemoryBooks;
-    if (s.linkMemoryBooks && !getCurrentChatId()) await openWelcomeScreen({ force: true });
 }
 
 /** 1.6 and older named these keys after the old folder name. */
@@ -1358,7 +1365,6 @@ function migrateStorageKeys() {
             new MutationObserver(() => scan()).observe(chatEl, { childList: true });
         }
         eventSource.on(event_types.APP_READY, scan);
-        eventSource.on(event_types.APP_READY, askMemoryBooksOnce);
         eventSource.makeLast(event_types.CHAT_RENAMED, onChatRenamed);
         scan();
         console.log(TAG, 'loaded');
