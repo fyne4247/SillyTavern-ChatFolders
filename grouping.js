@@ -10,17 +10,20 @@ export function defaultToMs(ts) {
 
 const stem = (f) => String(f ?? '').replace(/\.jsonl$/i, '');
 
-export const FOLDER_SORTS = ['name-asc', 'name-desc', 'threads-desc', 'threads-asc', 'messages-desc', 'messages-asc', 'recent', 'oldest'];
-export const CHAT_SORTS = ['name-asc', 'name-desc', 'messages-desc', 'messages-asc', 'recent', 'oldest'];
+export const FOLDER_SORTS = ['name-asc', 'name-desc', 'lore-asc', 'lore-desc', 'threads-desc', 'threads-asc', 'messages-desc', 'messages-asc', 'recent', 'oldest'];
+export const CHAT_SORTS = ['name-asc', 'name-desc', 'lore-asc', 'lore-desc', 'messages-desc', 'messages-asc', 'recent', 'oldest'];
 const naturalName = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' });
 const exactName = (a, b) => String(a ?? '') < String(b ?? '') ? -1 : String(a ?? '') > String(b ?? '') ? 1 : 0;
 const stableCompare = (a, b) => naturalName(a.key ?? a.name, b.key ?? b.name)
     || exactName(a.key ?? a.name, b.key ?? b.name)
     || exactName(a.mainChat ?? '', b.mainChat ?? '');
+// Lorebook A-Z (or Z-A); no lorebook stays last either way, and ties fall through to name A-Z.
+const compareBooks = (a, b, desc) => (!a || !b) ? (a ? -1 : b ? 1 : 0) : naturalName(a, b) * (desc ? -1 : 1);
 
 function compareChats(a, b, mode) {
     let result = 0;
     if (mode === 'name-asc' || mode === 'name-desc') result = naturalName(a.name, b.name) * (mode === 'name-desc' ? -1 : 1);
+    else if (mode === 'lore-asc' || mode === 'lore-desc') result = compareBooks(a.lorebook, b.lorebook, mode === 'lore-desc');
     else if (mode === 'messages-desc' || mode === 'messages-asc') result = (Number(a.count) - Number(b.count)) * (mode === 'messages-desc' ? -1 : 1);
     else if (mode === 'recent' || mode === 'oldest') {
         const am = Number.isFinite(a.ms) && a.ms > 0 ? a.ms : NaN;
@@ -41,10 +44,12 @@ export function sortChats(chats, mode = 'recent') {
     return sortChatSiblings(chats, mode).map(chat => ({ ...chat, children: sortChats(chat.children, mode) }));
 }
 
-export function sortFolders(folders, mode = 'recent') {
+/** @param {(folder: object) => string} [lorebookOf] the folder's lorebook name, '' for none */
+export function sortFolders(folders, mode = 'recent', lorebookOf = (folder) => folder.lorebook ?? '') {
     return [...(Array.isArray(folders) ? folders : [])].sort((a, b) => {
         let result = 0;
         if (mode === 'name-asc' || mode === 'name-desc') result = naturalName(a.name, b.name) * (mode === 'name-desc' ? -1 : 1);
+        else if (mode === 'lore-asc' || mode === 'lore-desc') result = compareBooks(lorebookOf(a), lorebookOf(b), mode === 'lore-desc');
         else if (mode === 'threads-desc' || mode === 'threads-asc') result = (a.count - b.count) * (mode === 'threads-desc' ? -1 : 1);
         else if (mode === 'messages-desc' || mode === 'messages-asc') result = (a.messages - b.messages) * (mode === 'messages-desc' ? -1 : 1);
         else {

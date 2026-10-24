@@ -85,17 +85,21 @@ function sortHeaderButton(label, ascending, descending, defaultMode, current, on
 function sortHeaderRow(scope, current, onChange) {
     const row = el('div', `chatFoldersSortRow chatFoldersSortRow-${scope}`);
     const add = (label, ascending, descending, defaultMode) => row.append(sortHeaderButton(label, ascending, descending, defaultMode, current, onChange));
+    const addLore = () => {
+        add('Lorebook', 'lore-asc', 'lore-desc', 'lore-asc');
+        row.lastElementChild.classList.add('chatFoldersSortLoreSpacer');
+    };
     if (scope === 'folders') {
         row.append(el('span', 'chatFoldersSortSpacer'), el('span', 'chatFoldersSortSpacer'));
         add('Character', 'name-asc', 'name-desc', 'name-asc');
-        row.append(el('span', 'chatFoldersSortSpacer chatFoldersSortLoreSpacer'));
+        addLore();
         add('Threads', 'threads-asc', 'threads-desc', 'threads-desc');
         add('Messages', 'messages-asc', 'messages-desc', 'messages-desc');
         add('Last active', 'oldest', 'recent', 'recent');
         row.append(el('span', 'chatFoldersSortSpacer'));
     } else {
         add('Branch', 'name-asc', 'name-desc', 'name-asc');
-        row.append(el('span', 'chatFoldersSortSpacer chatFoldersSortLoreSpacer'));
+        addLore();
         row.append(el('span', 'chatFoldersSortSpacer chatFoldersSortThreadSpacer'));
         add('Messages', 'messages-asc', 'messages-desc', 'messages-desc');
         add('Last active', 'oldest', 'recent', 'recent');
@@ -190,7 +194,6 @@ async function renameChat(folder, chat) {
     try {
         const newName = await callGenericPopup('Enter the new name for the chat:', POPUP_TYPE.INPUT, chat.name);
         if (!newName || typeof newName !== 'string' || newName.trim() === '' || newName === chat.name) return;
-        const pinsBefore = readPins();
         if (folder.kind === 'group') {
             await renameGroupOrCharacterChat({ groupId: folder.groupId, oldFileName: chat.name, newFileName: newName, loader: false });
         } else {
@@ -201,7 +204,6 @@ async function renameChat(folder, chat) {
             // Keep the character's "last chat" pointer valid, but don't move it to a chat that wasn't current.
             if (wasCurrent) await updateRemoteChatName(id, newName);
         }
-        movePin(pinsBefore, folder, chat.name, newName.trim());
         await openWelcomeScreen({ force: true });
         toastr.success('Chat renamed.', 'Chat Folders');
     } catch (e) {
@@ -252,6 +254,7 @@ function extraCharacterBooks(folder) {
 
 const characterOf = (folder) => characters.find(x => x.avatar === folder.avatar);
 const primaryBook = (folder) => characterOf(folder)?.data?.extensions?.world || NONE;
+const folderBook = (folder) => folder.kind === 'character' ? primaryBook(folder) : NONE;
 
 // Memory Books (third-party/SillyTavern-MemoryBooks): settings live in extension_settings.STMemoryBooks.
 // Manual mode keeps the chat's book in chat_metadata.STMemoryBooks.manualLorebook, and a per-character
@@ -453,6 +456,8 @@ async function autoLinkMemoryBooks(folders, shouldContinue = () => true) {
 const PIN_STORE = 'pinnedChats';
 const PIN_FOLDER_KEY = 'p:pinned';
 let pinnedNow = new Set();
+// The pins as last read or written here. Stock's rename handler saves from a copy it loaded at startup.
+let knownPins = null;
 /** @type {{root: HTMLElement, folders: object[]} | null} */
 let pinHost = null;
 
@@ -468,7 +473,10 @@ const pinOf = (folder, chat) => ({
     avatar: folder.kind === 'character' ? folder.avatar : '',
     file_name: `${chat.name}.jsonl`,
 });
-const pinnedKeys = () => new Set(Object.values(readPins()).filter(p => p && typeof p === 'object').map(pinKeyOf));
+const pinnedKeys = () => {
+    knownPins = readPins();
+    return new Set(Object.values(knownPins).filter(p => p && typeof p === 'object').map(pinKeyOf));
+};
 
 function togglePin(folder, chat) {
     const pin = pinOf(folder, chat);
@@ -479,16 +487,23 @@ function togglePin(folder, chat) {
     syncPins();
 }
 
-/** A rename moves the pin to the new file name (stock does this too, but from a cache that can be stale). */
-function movePin(before, folder, oldName, newName) {
-    const oldPin = pinOf(folder, { name: oldName });
+/**
+ * Any chat rename makes stock re-save pins from its startup copy, which drops pins made here since (and brings
+ * back ones removed). Runs after stock's handler: put back the pins as we last saw them, with the rename applied.
+ */
+function onChatRenamed({ avatarId, groupId, oldFileName, newFileName } = {}) {
+    if (!settings().enabled || !knownPins) return; // never read them this session: nothing to restore
+    const state = { ...knownPins };
+    const oldPin = { group: groupId ?? '', avatar: avatarId ?? '', file_name: oldFileName };
     const oldKey = pinKeyOf(oldPin);
-    if (!(oldKey in before)) return;
-    const state = { ...before };
-    const newPin = { ...oldPin, file_name: `${newName}.jsonl` };
-    delete state[oldKey];
-    state[pinKeyOf(newPin)] = newPin;
+    if (oldKey in state) {
+        const newPin = { ...state[oldKey], file_name: newFileName };
+        delete state[oldKey];
+        state[pinKeyOf(newPin)] = newPin;
+    }
     accountStorage.setItem(PIN_STORE, JSON.stringify(state));
+    knownPins = state;
+    syncPins();
 }
 
 function setPinMark(row, on) {
@@ -956,7 +971,7 @@ function renderInto(root, folders) {
         s.folderSort = FOLDER_SORTS.includes(value) ? value : 'recent';
         saveSettingsDebounced();
         syncSortHeader(folderSortHead, s.folderSort);
-        for (const folder of sortFolders(folders, s.folderSort)) {
+        for (const folder of sortFolders(folders, s.folderSort, folderBook)) {
             const api = folderApi.get(folder.key);
             if (api) root.append(api.box);
         }
@@ -966,7 +981,7 @@ function renderInto(root, folders) {
     pinnedNow = pinnedKeys();
     if (!folders.length) { root.append(el('div', 'chatFoldersEmpty', 'No chats')); applyFloatPosition(); return; }
     const expanded = loadExpanded();
-    for (const folder of sortFolders(folders, settings().folderSort)) root.append(renderFolder(folder, expanded));
+    for (const folder of sortFolders(folders, settings().folderSort, folderBook)) root.append(renderFolder(folder, expanded));
     renderPinned(root, folders, expanded);
     applyFloatPosition();
 }
@@ -1308,6 +1323,7 @@ function addSettingsUi() {
             new MutationObserver(() => scan()).observe(chatEl, { childList: true });
         }
         eventSource.on(event_types.APP_READY, scan);
+        eventSource.makeLast(event_types.CHAT_RENAMED, onChatRenamed);
         scan();
         console.log(TAG, 'loaded');
     } catch (e) {
