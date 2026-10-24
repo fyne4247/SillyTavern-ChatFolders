@@ -1180,7 +1180,8 @@ function applyFloatPosition() {
     const saved = readFloatPosition();
     const home = saved ? null : homeFloatPosition();
     document.body.classList.toggle(FLOAT_HOME_CLASS, !!home);
-    floatButton.hidden = !saved && !home; // the default spot belongs to the list, so no list means nothing to anchor to
+    // Expand/collapse only means something while the folder list is on screen.
+    floatButton.hidden = !document.querySelector('.' + ROOT_CLASS)?.isConnected;
     const position = clampFloat(saved || home || {});
     floatButton.style.left = `${position.left}px`;
     floatButton.style.top = `${position.top}px`;
