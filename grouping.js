@@ -1,4 +1,4 @@
-// Pure grouping/sorting logic for ST-ChatFolders. No DOM, no SillyTavern imports.
+// Pure grouping/sorting logic for Chat Folders. No DOM, no SillyTavern imports.
 
 /** Default timestamp parser: numbers (ms) and anything Date.parse understands. Returns NaN if unknown. */
 export function defaultToMs(ts) {
@@ -37,11 +37,6 @@ function compareChats(a, b, mode) {
 /** Return a sorted sibling array without cloning or mutating its canonical chat objects. */
 export function sortChatSiblings(chats, mode = 'recent') {
     return [...(Array.isArray(chats) ? chats : [])].sort((a, b) => compareChats(a, b, mode));
-}
-
-/** Sort a complete tree into independent copies for pure callers and tests. */
-export function sortChats(chats, mode = 'recent') {
-    return sortChatSiblings(chats, mode).map(chat => ({ ...chat, children: sortChats(chat.children, mode) }));
 }
 
 /** @param {(folder: object) => string} [lorebookOf] the folder's lorebook name, '' for none */

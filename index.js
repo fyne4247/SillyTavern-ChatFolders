@@ -20,7 +20,6 @@ import {
 } from './startup-pipeline.mjs';
 
 const TAG = '[ChatFolders]';
-const EXTENSION_EVALUATED_AT = performance.now();
 const SETTINGS_KEY = 'chatFolders';
 const LS_KEY = 'ST-ChatFolders.expanded';
 const ENHANCED = 'chatfolders-on'; // class added to .welcomePanel while our list replaces the original
@@ -426,8 +425,7 @@ async function autoLinkMemoryBooks(folders, shouldContinue = () => true) {
                 if (await setCharacterLorebook(folder, lockBook, { syncMemoryBook: false, expectedVersion: version, shouldContinue })) {
                     linked++; console.log(TAG, 'linked character', folder.name, '->', lockBook);
                 }
-            }
-            catch (e) { console.warn(TAG, 'auto-link failed for', folder.name, e); }
+            } catch (e) { console.warn(TAG, 'auto-link failed for', folder.name, e); }
         }
         const walk = async (list) => {
             for (const chat of list) {
@@ -438,8 +436,7 @@ async function autoLinkMemoryBooks(folders, shouldContinue = () => true) {
                         if (await setChatLorebook(folder, chat, chat.memoryBook, { syncMemoryBook: false, expectedVersion: version, shouldContinue, automatic: true })) {
                             linked++; console.log(TAG, 'linked chat', chat.name, '->', chat.memoryBook);
                         }
-                    }
-                    catch (e) { console.warn(TAG, 'auto-link failed for', chat.name, e); }
+                    } catch (e) { console.warn(TAG, 'auto-link failed for', chat.name, e); }
                 }
                 await walk(chat.children);
             }
@@ -712,8 +709,11 @@ function renderChat(folder, chat, depth, flat = false) {
     });
     row.addEventListener('keydown', (event) => {
         if (event.target !== row || isProtectedTarget(event.target)) return;
-        if (event.key === 'Enter') { event.preventDefault(); rowGestures.cancel(row); go(); }
-        else if (event.key === ' ') {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            rowGestures.cancel(row);
+            go();
+        } else if (event.key === ' ') {
             event.preventDefault();
             rowGestures.cancel(row);
             if (kids.length) {
@@ -1013,9 +1013,6 @@ function enhance(panel) {
     const run = {};
     panelRuns.set(panel, run);
     let root;
-    let fetchStarted;
-    let linkStarted;
-    const panelDetectedAt = performance.now();
     const current = () => panel.isConnected && settings().enabled && panelRuns.get(panel) === run && !!root?.isConnected;
     return startupPipeline.start(panel, {
         showLoading: () => {
@@ -1027,33 +1024,19 @@ function enhance(panel) {
             list.after(root);
             panelRoots.set(panel, root);
             panel.classList.add(ENHANCED);
-            fetchStarted = performance.now();
         },
         fetch: fetchChats,
         build: (rows) => buildFolders(rows, { characters, groups, toMs }),
         isCurrent: current,
-        render: (folders, rows) => {
-            const fetched = performance.now();
+        render: (folders) => {
             root.classList.remove('chatFoldersLoading');
             root.removeAttribute('role');
             root.removeAttribute('aria-live');
             renderInto(root, folders);
-            console.info(TAG, 'startup timings (ms)', {
-                fetch: Math.round(fetched - fetchStarted),
-                folderBuildAndRender: Math.round(performance.now() - fetched),
-                scriptEvaluationToReady: Math.round(performance.now() - EXTENSION_EVALUATED_AT),
-                panelDiscoveryToReady: Math.round(performance.now() - panelDetectedAt),
-                rows: rows.length,
-                folders: folders.length,
-                extensionResourceRequests: performance.getEntriesByType('resource')
-                    .filter((entry) => entry.name.includes('/ST-ChatFolders/'))
-                    .map(({ name, startTime, duration }) => ({ name, startTime: Math.round(startTime), duration: Math.round(duration) })),
-            });
         },
-        link: (folders) => { linkStarted = performance.now(); return autoLinkMemoryBooks(folders, current); },
+        link: (folders) => autoLinkMemoryBooks(folders, current),
         onLinked: (linked, folders) => {
             if (linked) refreshLorebookSelects(root, folders);
-            console.info(TAG, 'Memory Books linking (ms)', Math.round(performance.now() - linkStarted));
         },
         onLinkError: (error) => console.warn(TAG, 'Memory Books auto-link failed', error),
         onStale: () => {

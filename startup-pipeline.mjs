@@ -49,8 +49,11 @@ export function createKeyedWriteQueue() {
         const previous = queues.get(key) ?? Promise.resolve();
         const running = previous.catch(() => {}).then(action);
         queues.set(key, running);
-        try { return await running; }
-        finally { if (queues.get(key) === running) queues.delete(key); }
+        try {
+            return await running;
+        } finally {
+            if (queues.get(key) === running) queues.delete(key);
+        }
     };
 }
 
