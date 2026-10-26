@@ -30,7 +30,7 @@ Built for long-running roleplays with lots of branches and checkpoints, where th
 ## Usage
 
 - Click a **folder** to open or close it.
-- Click a **chat** to open it. If the chat has branches, a click opens or closes its branches instead, and a **double-click** opens the chat. With the keyboard, Space toggles and Enter opens.
+- Click a **chat's name** to open it. Clicking elsewhere on a chat with branches opens or closes its branches; a **double-click** anywhere on the row also opens the chat. With the keyboard, Space toggles and Enter opens.
 - Click a **column header** to sort by it; click again to reverse.
 - Use the **thumbtack** on a chat to pin or unpin it.
 - Drag the **floating folder button** to move it; click it to expand or collapse everything.

@@ -692,7 +692,7 @@ function syncBranchCaret(node) {
     const row = node.querySelector(':scope > .chatFoldersChat');
     if (row) {
         syncBranchAriaExpanded(row, caret, open);
-        row.title = `${row.dataset.chatName || ''}\n${row.dataset.chatDate || ''}\nClick to ${open ? 'collapse' : 'expand'} branches; double-click to open chat. Press Space to toggle; Enter to open.`;
+        row.title = `${row.dataset.chatName || ''}\n${row.dataset.chatDate || ''}\nClick the name or double-click to open chat; click elsewhere to ${open ? 'collapse' : 'expand'} branches. Press Space to toggle; Enter to open.`;
     }
 }
 
@@ -765,7 +765,7 @@ function renderChat(folder, chat, depth, flat = false) {
     row.dataset.pinKey = pinKeyOf(pinOf(folder, chat));
     if (kids.length) row.setAttribute('aria-expanded', 'false');
     row.title = kids.length
-        ? `${chat.name}\n${fmtLong(chat.ms)}\nClick to expand branches; double-click to open chat. Press Space to toggle; Enter to open.`
+        ? `${chat.name}\n${fmtLong(chat.ms)}\nClick the name or double-click to open chat; click elsewhere to expand branches. Press Space to toggle; Enter to open.`
         : `${chat.name}\n${fmtLong(chat.ms)}\nClick or press Enter to open chat.`;
     const name = el('div', 'chatFoldersChatName');
     name.append(Object.assign(el('i', 'fa-solid fa-thumbtack fa-xs chatFoldersPinMark'), { title: 'Pinned chat' }));
@@ -781,7 +781,16 @@ function renderChat(folder, chat, depth, flat = false) {
     }
     if (depth > 0) name.append(Object.assign(el('i', 'fa-solid fa-code-branch fa-xs'), { title: 'Branch / checkpoint' }), ' ');
     if (flat) name.append(pinnedAvatar(folder), el('strong', 'chatFoldersPinnedChar', folder.name), ' \u2013 ');
-    name.append(chat.name);
+    // The name always opens the chat, so a chat with branches doesn't need a double-click.
+    const link = el('a', 'chatFoldersChatLink', chat.name);
+    link.title = `Open ${chat.name}`;
+    link.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        rowGestures.cancel(row);
+        if (event.detail <= 1) go();
+    });
+    name.append(link);
     const lore = folder.kind === 'character' && !flat
         ? lorebookSelect(chat.lorebook, 'Chat lorebook', chat.name, (n) => setChatLorebook(folder, chat, n), { folder, chat })
         : el('span');

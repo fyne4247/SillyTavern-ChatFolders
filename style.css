@@ -301,3 +301,7 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
 /* empty placeholders that hold the lorebook column on the welcome screen */
 .chatfolders-root.chatfolders-sidebar .chatFoldersHeader > span:not([class]),
 .chatfolders-root.chatfolders-sidebar .chatFoldersChat > span:not([class]) { display: none; }
+
+/* chat names open the chat (rows with branches toggle them everywhere else) */
+.chatFoldersChatLink { color: inherit; text-decoration: none; cursor: pointer; }
+.chatFoldersChatLink:hover { color: var(--SmartThemeQuoteColor); text-decoration: underline; text-underline-offset: 2px; }
