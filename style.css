@@ -51,6 +51,7 @@
 .chatFoldersBranchNode + .chatFoldersBranchNode { border-top: 1px solid var(--SmartThemeBorderColor); }
 .chatFoldersBranchNode.open > .chatFoldersChat .chatFoldersBranchCaret { transform: rotate(90deg); }
 .chatFoldersBranchCaret { margin-right: 4px; }
+.chatFoldersBranchSpacer { display: inline-block; width: 1.25em; margin-right: 4px; }
 .chatFoldersHeader .avatar { align-self: center; }
 .chatFoldersInfo { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
 .chatFoldersName { font-size: var(--mainFontSize); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -193,6 +194,13 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
     background: transparent; color: var(--SmartThemeBodyColor); cursor: pointer;
 }
 .chatFoldersAll i { pointer-events: none; }
+/* Keep the per-character branch control beside its Branch column label. */
+.chatFoldersBranchHeading { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.chatFoldersBranchHeading > .chatFoldersSortButton { width: auto; flex: 0 1 auto; }
+.chatFoldersBranchHeading > .chatFoldersAll {
+    flex: 0 0 auto; min-width: 1.5em; min-height: 1.5em; padding: 1px 3px;
+    font-size: 0.75em; border-color: transparent; background: transparent;
+}
 .chatFoldersBody > .chatFoldersSortRow { flex: 0 0 auto; }
 @media screen and (max-width: 600px) {
     .chatFoldersSortRow-folders {
@@ -212,7 +220,8 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
     }
     .chatFoldersSortRow-chats > .chatFoldersSortLoreSpacer,
     .chatFoldersSortRow-chats > .chatFoldersSortThreadSpacer { display: none; }
-    .chatFoldersSortRow-chats [data-sort-label="Branch"] { grid-column: 1 / -1; grid-row: 1; }
+    .chatFoldersSortRow-chats > .chatFoldersBranchHeading,
+    .chatFoldersSortRow-chats > [data-sort-label="Branch"] { grid-column: 1 / -1; grid-row: 1; }
     .chatFoldersSortRow-chats [data-sort-label="Messages"] { grid-column: 2; grid-row: 2; }
     .chatFoldersSortRow-chats [data-sort-label="Last active"] { grid-column: 3; grid-row: 2; }
     .chatFoldersSortRow-chats > .chatFoldersAll { grid-column: 4; grid-row: 2; }

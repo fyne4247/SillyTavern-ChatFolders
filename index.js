@@ -763,6 +763,10 @@ function renderChat(folder, chat, depth, flat = false) {
         caret.tabIndex = 0;
         caret.setAttribute('role', 'button');
         name.append(caret);
+    } else if (!flat) {
+        const spacer = el('span', 'chatFoldersBranchSpacer');
+        spacer.setAttribute('aria-hidden', 'true');
+        name.append(spacer);
     }
     if (depth > 0) name.append(Object.assign(el('i', 'fa-solid fa-code-branch fa-xs'), { title: 'Branch / checkpoint' }), ' ');
     if (flat) name.append(pinnedAvatar(folder), el('strong', 'chatFoldersPinnedChar', folder.name), ' \u2013 ');
@@ -918,7 +922,12 @@ function renderFolder(folder, expandedState) {
     const tree = el('div', 'chatFoldersTree');
     let sortMode = settings().chatSort;
     const sortHead = sortHeaderRow('chats', sortMode, setSharedChatSort);
-    sortHead.append(allButton);
+    const branchHeading = el('div', 'chatFoldersBranchHeading');
+    const branchSort = sortHead.firstElementChild;
+    branchSort.replaceWith(branchHeading);
+    branchHeading.append(branchSort);
+    if (folderHasBranches(folder)) branchHeading.append(allButton);
+    sortHead.append(el('span', 'chatFoldersSortSpacer'));
     body.append(sortHead, tree);
     let filled = false;
     const applyChatSort = (value) => {
