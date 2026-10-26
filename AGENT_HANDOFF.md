@@ -1,6 +1,6 @@
 # Branch rename compatibility fix
 
-Objective: renaming a branch through Chat Folders must continue renaming its exclusive chat-linked lorebook without Memory Books creating another branch copy. Only Chat Folders may be edited. No user-data repair, Memory Books changes, pushes, or merges authorized.
+Objective: renaming a branch through Chat Folders must continue renaming its exclusive chat-linked lorebook without Memory Books creating another branch copy. Only Chat Folders may be edited. No user-data repair or Memory Books changes authorized. Owner subsequently authorized merging and pushing main.
 
 Baseline: main c2a3967. Task branch: fix/branch-rename-copy-receipt. Preexisting untracked futureplan.md is untouched and excluded.
 
@@ -8,7 +8,7 @@ Implemented: known Chat Folders rename supplies a pending identity; a first CHAT
 
 Verified: 25 Node tests pass; index.js syntax and whitespace checks pass. Separate in-memory check with the installed Memory Books branch controller confirms zero extra copy writes both at the early reload and after the book rename. No real chats or lorebooks were changed during tests. No browser verification performed. Separate native chat-menu renames do not receive the early pending-rename protection; sanitized chat names and inactive group receipts need further coverage. No independent agent review claimed.
 
-Installed only index.js and lorebook-rename.mjs into local SillyTavern Chat Folders; bytes verified. Original backup: /Users/fish4247/Library/Application Support/SillyTavern-fixes/chatfolders-branch-rename-20261026-183257. Memory Books and Rename Relink files untouched. Existing duplicates untouched. Not merged to main or pushed.
+Installed only index.js and lorebook-rename.mjs into local SillyTavern Chat Folders; bytes verified. Original backup: /Users/fish4247/Library/Application Support/SillyTavern-fixes/chatfolders-branch-rename-20261026-183257. Memory Books and Rename Relink files untouched. Existing duplicates untouched. Owner approved merging to main and pushing origin/main; see Git refs for the resulting state.
 
 ## NEXT ACTION
 
