@@ -294,7 +294,10 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
     padding-left: calc(var(--cf-depth, 0) * 1.3em + 1.25em + 4px);
 }
 .chatfolders-root.chatfolders-sidebar .chatFoldersChat > .chatFoldersMeta > * { font-size: calc(var(--mainFontSize) * 0.8); }
-.chatfolders-root.chatfolders-sidebar .chatFoldersCurrent { background-color: var(--cobalt30a); }
+/* the open chat and its folder */
+.chatFoldersFolder.chatFoldersCurrentFolder { border-color: var(--SmartThemeQuoteColor); }
+.chatFoldersCurrentFolder > .chatFoldersHeader { background-color: var(--cobalt30a); }
+.chatFoldersChat.chatFoldersCurrent { background-color: var(--cobalt30a); box-shadow: inset 3px 0 0 var(--SmartThemeQuoteColor); }
 /* empty placeholders that hold the lorebook column on the welcome screen */
 .chatfolders-root.chatfolders-sidebar .chatFoldersHeader > span:not([class]),
 .chatfolders-root.chatfolders-sidebar .chatFoldersChat > span:not([class]) { display: none; }

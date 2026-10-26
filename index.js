@@ -797,6 +797,8 @@ function renderChat(folder, chat, depth, flat = false) {
     );
     row.append(name, lore, el('span', 'chatFoldersSpacer'), meta, actions); // spacer sits under the header's thread count
     setPinMark(row, pinnedNow.has(row.dataset.pinKey));
+    const current = currentChatRef();
+    row.classList.toggle(CURRENT_CHAT, current?.key === folder.key && current.name === chat.name);
     const go = () => openChat(folder, chat.name);
     const isProtectedTarget = (target) => target instanceof Element && !!target.closest(
         '.chatFoldersBranchCaret, .chatFoldersActions, .chatFoldersLore, button, select, input, textarea, a',
@@ -884,6 +886,7 @@ function folderAvatar(folder) {
 
 function renderFolder(folder, expandedState, apis) {
     const box = el('div', 'chatFoldersFolder');
+    box.classList.toggle(CURRENT_FOLDER, currentChatRef()?.key === folder.key);
     const head = el('div', 'chatFoldersHeader');
     head.tabIndex = 0;
     head.setAttribute('role', 'button');
@@ -1179,6 +1182,8 @@ function enhance(panel) {
 // "visible" class. While it's open, our folders take the place of its list; its own list stays underneath, hidden.
 const SIDEBAR_ID = 'extensionSideBar';
 const SIDEBAR_ON = 'chatfolders-sidebar-on';
+const CURRENT_CHAT = 'chatFoldersCurrent';
+const CURRENT_FOLDER = 'chatFoldersCurrentFolder';
 let sidebarRoot = null;
 let sidebarRun = 0;
 let sidebarHooked = null;
@@ -1244,27 +1249,36 @@ async function refreshSidebar() {
     revealCurrentChat(sidebarRoot);
 }
 
-/** Open the current chat's folder and parent branches (not saved), mark its row, and scroll to it once. */
-function revealCurrentChat(root) {
-    const chatId = getCurrentChatId();
-    if (!chatId) return;
+/** Folder key and chat name of the open chat, or null on the welcome screen. */
+function currentChatRef() {
+    const name = getCurrentChatId();
+    if (!name) return null;
     const { groupId } = SillyTavern.getContext();
-    const key = groupId ? 'g:' + groupId : 'c:' + characters[this_chid]?.avatar;
-    const api = rootApis(root).get(key);
+    const avatar = characters[this_chid]?.avatar;
+    const key = groupId ? 'g:' + groupId : avatar ? 'c:' + avatar : '';
+    return key ? { key, name } : null;
+}
+
+/**
+ * Open the current chat's folder, the branches above it and its own branches (none of it saved), then scroll
+ * it to the middle: once per chat, or every time with center.
+ */
+function revealCurrentChat(root, { center = false } = {}) {
+    const current = currentChatRef();
+    const api = current && rootApis(root).get(current.key);
     if (!api) return;
     api.setOpen(true, false);
-    const row = [...api.box.querySelectorAll('.chatFoldersChat')].find(r => r.dataset.chatName === chatId);
+    const row = [...api.box.querySelectorAll('.chatFoldersChat')].find(r => r.dataset.chatName === current.name);
     if (!row) return;
-    row.classList.add('chatFoldersCurrent');
-    for (let node = row.parentElement?.parentElement?.closest('.chatFoldersBranchNode'); node && api.box.contains(node);
-        node = node.parentElement?.closest('.chatFoldersBranchNode')) {
+    for (let node = row.parentElement; node && api.box.contains(node); node = node.parentElement?.closest('.chatFoldersBranchNode')) {
+        if (!node.querySelector(':scope > .chatFoldersBranchBody')) continue;
         node.classList.add('open');
         syncBranchCaret(node);
     }
-    const shown = `${key}\u0000${chatId}`;
-    if (sidebarRevealed !== shown) {
+    const shown = `${current.key}\u0000${current.name}`;
+    if (center || sidebarRevealed !== shown) {
         sidebarRevealed = shown;
-        row.scrollIntoView({ block: 'center' });
+        row.scrollIntoView({ block: 'center', behavior: center ? 'smooth' : 'auto' });
     }
 }
 
@@ -1324,7 +1338,8 @@ function folderRecordOpen(st) {
 
 function anyFolderOpen() {
     const live = liveApis();
-    if (live.length) return live.some(([, api]) => api.box.classList.contains('open'));
+    // The open chat's folder always stays open, so it doesn't count.
+    if (live.length) return live.some(([, api]) => api.box.classList.contains('open') && !api.box.classList.contains(CURRENT_FOLDER));
     const st = loadExpanded();
     return !!st.__expandAll || folderRecordOpen(st);
 }
@@ -1349,6 +1364,7 @@ function setEveryFolder(open) {
         }
     }
     saveExpanded(st);
+    if (sidebarRoot?.isConnected) revealCurrentChat(sidebarRoot, { center: true });
     updateFloat();
 }
 
