@@ -21,7 +21,7 @@ Run integration: set `STMB_BRANCH_MODULE` to the installed Memory Books `branchL
 
 ## Installation and repository state
 
-Install as a committed fast-forward in the local Chat Folders extension checkout so its Git record matches its files. Keep the prior installed commit as a backup branch. No Memory Books or Rename Relink edits, no existing duplicate cleanup, no source main merge, no push for this follow-up. Previous permission to push covered the earlier delivered fix.
+Implemented in 76d9097 and installed by fast-forwarding the local Chat Folders extension checkout. Runtime file bytes match the source, and the installed checkout is clean. Prior installed a7d8cb8 is preserved on backup/before-reopen-fix-20261026-192044. The installed checkout uses its local main; the source repository remains on the task branch. No Memory Books or Rename Relink edits, no existing duplicate cleanup, no source main merge, no push for this follow-up. Previous permission to push covered the earlier delivered fix.
 
 ## NEXT ACTION
 
