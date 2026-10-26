@@ -255,6 +255,8 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
     flex: 1; min-height: 0; overflow-y: auto; align-self: stretch;
     margin-top: 1.5em; padding: 2px; gap: 2px;
 }
+/* the sidebar has a fixed height: scroll instead of squashing folders to fit */
+.chatfolders-root.chatfolders-sidebar > * { flex-shrink: 0; }
 .chatfolders-root.chatfolders-sidebar .chatFoldersLore,
 .chatfolders-root.chatfolders-sidebar .chatFoldersSpacer,
 .chatfolders-root.chatfolders-sidebar .chatFoldersSortSpacer,
