@@ -10,7 +10,7 @@ import { accountStorage } from '../../../util/AccountStorage.js';
 import { timestampToMoment } from '../../../utils.js';
 import { openWelcomeScreen } from '../../../welcome-screen.js';
 import {
-    createNewWorldInfo, openWorldInfoEditor, setWorldInfoButtonClass, world_info, world_names,
+    createNewWorldInfo, deleteWorldInfo, updateWorldInfoList, openWorldInfoEditor, setWorldInfoButtonClass, world_info, world_names,
 } from '../../../world-info.js';
 import { buildFolders, CHAT_SORTS, FOLDER_SORTS, sortChatSiblings, sortFolders } from './grouping.js';
 import { createRowGestureCoordinator, syncBranchAriaExpanded } from './row-gestures.js';
@@ -18,6 +18,9 @@ import { CREATE, NONE, orderedLorebookOptions } from './lorebook-options.mjs';
 import {
     canAutoLinkChat, createKeyedWriteQueue, createStartupPipeline, matchesCharacterChat, updateActiveChatMetadata,
 } from './startup-pipeline.mjs';
+
+import { power_user } from '../../../power-user.js';
+import { chatStem, exclusiveChatBook } from './lorebook-rename.mjs';
 
 const TAG = '[ChatFolders]';
 const SETTINGS_KEY = 'chatFolders';
@@ -39,6 +42,7 @@ const settings = () => {
     s.showPinned ??= true;
     s.showFloat ??= true;
     s.confirmDelete ??= true;
+    s.renameMemoryBook ??= true;
     if (!FOLDER_SORTS.includes(s.folderSort)) s.folderSort = 'recent';
     if (!CHAT_SORTS.includes(s.chatSort)) s.chatSort = 'recent';
     return s;
@@ -148,7 +152,7 @@ async function fetchChats() {
         const res = await fetch('/api/chats/recent', {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify({ max: 100000, metadata: true }),
+            body: JSON.stringify({ metadata: true }),
             cache: 'no-cache',
             signal: controller.signal,
         });
@@ -538,6 +542,57 @@ function onChatRenamed({ avatarId, groupId, oldFileName, newFileName } = {}) {
     accountStorage.setItem(PIN_STORE, JSON.stringify(state));
     knownPins = state;
     syncPins();
+}
+
+// Listen to core so renames from the chat menu also follow this preference.
+async function renameLinkedMemoryBook(target) {
+    if (!settings().enabled || !settings().renameMemoryBook || !mbEnabled()) return;
+    try {
+        const rows = await fetchChats();
+        const characterBooks = characters.map(c => c.data?.extensions?.world);
+        characterBooks.push(...(world_info?.charLore ?? []).flatMap(x => x.extraBooks ?? []));
+        characterBooks.push(...Object.values(mbSettings()?.characterMemoryBookLocks ?? {}).map(x => x?.lorebookName));
+        characterBooks.push(...(world_info?.globalSelect ?? []), power_user.persona_description_lorebook,
+            ...Object.values(power_user.persona_descriptions ?? {}).map(x => x?.lorebook));
+        const oldBook = exclusiveChatBook(rows, target, characterBooks);
+        const newBook = chatStem(target.newFileName);
+        if (!oldBook || oldBook === newBook) return;
+        await updateWorldInfoList();
+        if (!world_names.includes(oldBook)) throw new Error('Linked lorebook no longer exists');
+        // Never overwrite another book, including on case-insensitive filesystems.
+        if (!newBook || /[<>:"/\\|?*\x00-\x1f]/.test(newBook) ||
+            world_names.some(n => n.localeCompare(newBook, undefined, { sensitivity: 'base' }) === 0)) {
+            toastr.warning('Chat renamed. Its lorebook was kept because the new book name is unavailable.', 'Chat Folders');
+            return;
+        }
+        const data = await (await post('/api/worldinfo/get', { name: oldBook })).json();
+        if (!data?.entries) throw new Error('Could not read linked lorebook');
+        // Confirm the write and relink before removing the original.
+        await post('/api/worldinfo/edit', { name: newBook, data });
+        const patch = m => {
+            if (m.world_info !== oldBook) throw new Error('Chat lorebook changed during rename');
+            m.world_info = newBook;
+            if (m.STMemoryBooks?.manualLorebook === oldBook) m.STMemoryBooks.manualLorebook = newBook;
+        };
+        if (target.groupId) {
+            const context = SillyTavern.getContext();
+            if (String(context.groupId) === String(target.groupId) && getCurrentChatId() === newBook) {
+                await updateActiveChatMetadata(chat_metadata, patch, saveMetadata);
+            } else {
+                const chat = await (await post('/api/chats/group/get', { id: newBook })).json();
+                if (!chat?.[0]?.chat_metadata) throw new Error('Missing group chat metadata');
+                patch(chat[0].chat_metadata);
+                await post('/api/chats/group/save', { id: newBook, chat });
+            }
+        } else {
+            await patchChatMetadata({ kind: 'character', key: 'c:' + target.avatarId, avatar: target.avatarId }, newBook, patch);
+        }
+        await updateWorldInfoList();
+        if (!await deleteWorldInfo(oldBook)) throw new Error('New book linked; original book could not be removed');
+    } catch (error) {
+        console.error(TAG, 'Linked lorebook rename failed', error);
+        toastr.warning('Chat renamed, but its lorebook rename could not finish. Check the chat link and both book names before retrying. See console for details.', 'Chat Folders');
+    }
 }
 
 function setPinMark(row, on) {
@@ -1315,6 +1370,8 @@ function addSettingsUi() {
                     <i class="fa-solid fa-arrows-to-dot"></i><span>Reset button position</span>
                 </div>
                 ${check('chatfolders_confirmdelete', 'Ask before deleting a chat')}
+                ${check('chatfolders_renamemb', 'Rename the exclusive chat lorebook when renaming a chat (requires Memory Books)')}
+                <small>Skips books linked to characters or other chats. Existing book names are never overwritten.</small>
                 ${check('chatfolders_linkmb', 'If Memory Books has a book for a character or chat that has no lorebook, link it as the lorebook')}
                 <small>Only used while Memory Books' Manual Lorebook Mode is on. Linking saves the lorebook into those chats' files.</small>
             </div>
@@ -1332,6 +1389,7 @@ function addSettingsUi() {
     bind('chatfolders_pinned', 'showPinned', () => syncPins());
     bind('chatfolders_float', 'showFloat', () => applyFloatPosition());
     bind('chatfolders_confirmdelete', 'confirmDelete');
+    bind('chatfolders_renamemb', 'renameMemoryBook');
     bind('chatfolders_linkmb', 'linkMemoryBooks');
     document.getElementById('chatfolders_float_reset').addEventListener('click', () => {
         try { localStorage.removeItem(FLOAT_KEY); } catch { /* nothing saved */ }
@@ -1366,6 +1424,7 @@ function migrateStorageKeys() {
         }
         eventSource.on(event_types.APP_READY, scan);
         eventSource.makeLast(event_types.CHAT_RENAMED, onChatRenamed);
+        eventSource.on(event_types.CHAT_RENAMED, renameLinkedMemoryBook);
         scan();
         console.log(TAG, 'loaded');
     } catch (e) {

@@ -45,6 +45,7 @@ In **Extensions → Chat Folders**:
 | Floating expand/collapse-all button | On | Hide the floating button |
 | Reset button position | | Puts the floating button back in the corner of the list |
 | Ask before deleting a chat | On | Turn off to delete without a confirmation |
+| Rename a chat’s exclusive lorebook with the chat | On | Requires Memory Books; skips character-linked and shared books |
 | Link Memory Books as lorebooks | Asked when needed | Manual Lorebook Mode only; see below |
 
 ## Memory Books (optional)
@@ -55,6 +56,7 @@ The extra features only matter in Memory Books' **Manual Lorebook Mode**:
 
 - If some chats have a manual-mode Memory Book but no lorebook, Chat Folders asks once whether to **link those books as their lorebooks**. Saying yes saves the lorebook into those chats. Choosing "None" for a chat is remembered, and it won't be linked again. Characters with a Memory Books lock get their locked book the same way.
 - Picking a lorebook in Chat Folders also points Memory Books at that book.
+- Renaming a chat also renames its chat-level lorebook to the new chat name and updates its Memory Books manual link when that link points to the same book. This is on by default and can be turned off in Chat Folders settings. It requires Memory Books to be enabled. Books linked to any character (including character locks), another chat, a persona, or globally are left alone. An existing book with the new name is never overwritten. If saving or relinking fails, the original book is kept; a new copy may also remain for recovery.
 - Linking follows manual mode live: turn manual mode off and it stops, turn it back on and it picks up again with your earlier answer.
 - Characters with a Memory Books lock show a lock tag.
 
