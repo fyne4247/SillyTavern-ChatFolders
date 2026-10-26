@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chatStem, exclusiveChatBook, sameChat } from './lorebook-rename.mjs';
+import { chatStem, exclusiveChatBook, sameChat, remapBranchCopyIdentity, remapBranchCopyBook } from './lorebook-rename.mjs';
 const target = { avatarId: 'a.png', newFileName: 'Renamed.jsonl' };
 const row = { avatar: 'a.png', file_name: 'Renamed.jsonl', chat_metadata: { world_info: 'Book' } };
 test('exclusive chat book follows a rename', () => assert.equal(exclusiveChatBook([row], target, []), 'Book'));
@@ -34,7 +34,7 @@ async function runRename({ enabled = true, shared = false, collision = false, fa
         fetchChats: async () => [row, ...(staleBranch ? [{ ...row, file_name: "Branch.jsonl", chat_metadata: { main_chat: "Renamed", world_info: "Branch book", STMemoryBooks: { manualLorebook: "Book" } } }] : []), ...(shared ? [{ ...row, avatar: 'b.png' }] : [])],
         characters: primaryBook ? [{ data: { extensions: { world: 'Book' } } }] : [], world_info: {}, power_user: {},
         mbSettings: () => ({ characterMemoryBookLocks: characterLock ? { 'a.png': { lorebookName: 'Book' } } : {} }),
-        exclusiveChatBook, chatStem, world_names: collision ? ['Book', 'Renamed'] : ['Book'],
+        exclusiveChatBook, chatStem, remapBranchCopyIdentity, remapBranchCopyBook, world_names: collision ? ['Book', 'Renamed'] : ['Book'],
         updateWorldInfoList: async () => {},
         post: async (url) => {
             calls.push(url);
@@ -93,4 +93,53 @@ test('active character lock protects its book', async () => {
 });
 test('actual character lorebook stays protected with manual mode off', async () => {
     assert.deepEqual((await runRename({ primaryBook: true })).calls, []);
+});
+
+test('exclusive Memory Books branch copies still follow the chat name', () => {
+    const managed = { ...row, chat_metadata: { ...row.chat_metadata, STMemoryBooks: {
+        branchLorebookCopies: { version: 1, status: 'completed', branchChatId: 'Old' },
+    } } };
+    assert.equal(exclusiveChatBook([managed], target, []), 'Book');
+});
+test('known branch rename preserves copy mappings and updates its identity once', () => {
+    const marker = { version: 1, status: 'completed', branchChatId: 'Old', mappings: [{ copyName: 'Book Branch 1' }] };
+    const metadata = { world_info: 'Book Branch 1', STMemoryBooks: { branchLorebookCopies: marker } };
+    assert.equal(remapBranchCopyIdentity(metadata, 'Old', 'New'), true);
+    assert.equal(marker.branchChatId, 'New');
+    assert.equal(marker.mappings[0].copyName, metadata.world_info);
+    assert.equal(remapBranchCopyIdentity(metadata, 'Old', 'New'), false);
+});
+test('inherited and failed receipts are not promoted by rename', () => {
+    for (const status of ['failed', 'completed']) {
+        const metadata = { STMemoryBooks: { branchLorebookCopies: { version: 1, status, branchChatId: 'Other' } } };
+        assert.equal(remapBranchCopyIdentity(metadata, 'Old', 'New'), false);
+    }
+});
+test('reload hook repairs the receipt before later chat-change listeners run', async () => {
+    const metadata = { STMemoryBooks: { branchLorebookCopies: { version: 1, status: 'completed', branchChatId: 'Old' } } };
+    let saves = 0;
+    const sandbox = {
+        getCurrentChatId: () => 'New', SillyTavern: { getContext: () => ({}) },
+        characters: [{ avatar: 'a.png' }], this_chid: 0, chat_metadata: metadata,
+        remapBranchCopyIdentity, saveMetadata: async () => { saves++; },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(source.slice(source.indexOf('let pendingBranchRename'), source.indexOf('async function renameFolderChat')), sandbox);
+    vm.runInContext("pendingBranchRename = { folder: { kind: 'character', avatar: 'a.png' }, oldName: 'Old', newName: 'New' };", sandbox);
+    await sandbox.preserveRenamedBranchCopy();
+    assert.equal(metadata.STMemoryBooks.branchLorebookCopies.branchChatId, 'New');
+    assert.equal(saves, 1);
+    await sandbox.preserveRenamedBranchCopy();
+    assert.equal(saves, 1);
+});
+
+test('book rename updates the copy receipt while preserving lineage and other books', () => {
+    const metadata = { STMemoryBooks: { branchLorebookCopies: {
+        version: 1, status: 'completed', branchChatId: 'New',
+        mappings: [{ sourceName: 'Parent Book', rootName: 'Root', copyName: 'Old Book' }, { copyName: 'Other' }],
+    } } };
+    remapBranchCopyBook(metadata, 'Old Book', 'New');
+    assert.deepEqual(metadata.STMemoryBooks.branchLorebookCopies.mappings, [
+        { sourceName: 'Parent Book', rootName: 'Root', copyName: 'New' }, { copyName: 'Other' },
+    ]);
 });

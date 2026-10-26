@@ -20,7 +20,7 @@ import {
 } from './startup-pipeline.mjs';
 
 import { power_user } from '../../../power-user.js';
-import { chatStem, exclusiveChatBook } from './lorebook-rename.mjs';
+import { chatStem, exclusiveChatBook, remapBranchCopyIdentity, remapBranchCopyBook } from './lorebook-rename.mjs';
 
 const TAG = '[ChatFolders]';
 const SETTINGS_KEY = 'chatFolders';
@@ -209,6 +209,38 @@ async function listChatNames(avatar) {
     return Array.isArray(list) ? list.map(x => x.file_id) : [];
 }
 
+let pendingBranchRename = null;
+
+// Core reloads the chat BEFORE CHAT_RENAMED. Repair its copy receipt before
+// Memory Books handles that reload, otherwise it copies the branch a second time.
+async function preserveRenamedBranchCopy() {
+    const pending = pendingBranchRename;
+    if (!pending || getCurrentChatId() !== pending.newName) return;
+    const context = SillyTavern.getContext();
+    if (pending.folder.kind === 'group'
+        ? String(context.groupId) !== String(pending.folder.groupId)
+        : characters[this_chid]?.avatar !== pending.folder.avatar) return;
+    if (remapBranchCopyIdentity(chat_metadata, pending.oldName, pending.newName)) await saveMetadata();
+}
+
+async function renameFolderChat(folder, oldName, newName, options) {
+    pendingBranchRename = { folder, oldName, newName };
+    try {
+        await renameGroupOrCharacterChat(options);
+        // Inactive character chats never emit CHAT_CHANGED for the renamed file.
+        if (folder.kind === 'character') {
+            const rows = await fetchChats();
+            const renamed = rows.find(row => row.avatar === folder.avatar && chatStem(row.file_name) === newName);
+            const marker = renamed?.chat_metadata?.STMemoryBooks?.branchLorebookCopies;
+            if (marker?.version === 1 && marker.status === 'completed' && marker.branchChatId === oldName) {
+                await patchChatMetadata(folder, newName, metadata => remapBranchCopyIdentity(metadata, oldName, newName));
+            }
+        }
+    } finally {
+        pendingBranchRename = null;
+    }
+}
+
 async function renameChat(folder, chat) {
     try {
         const typed = await callGenericPopup('Enter the new name for the chat:', POPUP_TYPE.INPUT, chat.name);
@@ -220,13 +252,13 @@ async function renameChat(folder, chat) {
             return;
         }
         if (folder.kind === 'group') {
-            await renameGroupOrCharacterChat({ groupId: folder.groupId, oldFileName: chat.name, newFileName: newName, loader: false });
+            await renameFolderChat(folder, chat.name, newName, { groupId: folder.groupId, oldFileName: chat.name, newFileName: newName, loader: false });
         } else {
             const id = characters.findIndex(x => x.avatar === folder.avatar);
             if (id === -1) throw new Error('character not found: ' + folder.avatar);
             const wasCurrent = characters[id].chat === chat.name;
             const before = await listChatNames(folder.avatar);
-            await renameGroupOrCharacterChat({ characterId: String(id), oldFileName: chat.name, newFileName: newName, loader: false });
+            await renameFolderChat(folder, chat.name, newName, { characterId: String(id), oldFileName: chat.name, newFileName: newName, loader: false });
             // The server may sanitize the name, and core reports its own errors, so look at what's on disk now.
             const after = await listChatNames(folder.avatar);
             const actual = after.find(n => !before.includes(n));
@@ -580,6 +612,8 @@ async function renameLinkedMemoryBook(target) {
         const patch = m => {
             if (m.world_info !== oldBook) throw new Error('Chat lorebook changed during rename');
             m.world_info = newBook;
+            remapBranchCopyIdentity(m, chatStem(target.oldFileName), newBook);
+            remapBranchCopyBook(m, oldBook, newBook);
             if (m.STMemoryBooks?.manualLorebook === oldBook) m.STMemoryBooks.manualLorebook = newBook;
         };
         if (target.groupId) {
@@ -1578,6 +1612,7 @@ function migrateStorageKeys() {
             new MutationObserver(() => scan()).observe(chatEl, { childList: true });
         }
         eventSource.on(event_types.APP_READY, scan);
+        eventSource.makeFirst(event_types.CHAT_CHANGED, preserveRenamedBranchCopy);
         eventSource.makeLast(event_types.CHAT_RENAMED, onChatRenamed);
         eventSource.on(event_types.CHAT_RENAMED, renameLinkedMemoryBook);
         for (const type of [event_types.CHAT_CHANGED, event_types.CHAT_RENAMED, event_types.CHAT_DELETED, event_types.GROUP_CHAT_DELETED]) {
