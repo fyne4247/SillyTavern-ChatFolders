@@ -554,7 +554,7 @@ async function renameLinkedMemoryBook(target) {
         characterBooks.push(...Object.values(mbSettings()?.characterMemoryBookLocks ?? {}).map(x => x?.lorebookName));
         characterBooks.push(...(world_info?.globalSelect ?? []), power_user.persona_description_lorebook,
             ...Object.values(power_user.persona_descriptions ?? {}).map(x => x?.lorebook));
-        const oldBook = exclusiveChatBook(rows, target, characterBooks);
+        const oldBook = exclusiveChatBook(rows, target, characterBooks, { manualMode: mbManual() });
         const newBook = chatStem(target.newFileName);
         if (!oldBook || oldBook === newBook) return;
         await updateWorldInfoList();

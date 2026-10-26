@@ -26,12 +26,12 @@ test('unrelated books do not block rename', () => assert.equal(exclusiveChatBook
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
-async function runRename({ enabled = true, shared = false, collision = false, failSave = false, failLink = false } = {}) {
+async function runRename({ enabled = true, shared = false, collision = false, failSave = false, failLink = false, manualMode = false, staleBranch = false } = {}) {
     const calls = [];
     const metadata = { world_info: 'Book', STMemoryBooks: { manualLorebook: 'Book' } };
     const sandbox = {
-        settings: () => ({ enabled: true, renameMemoryBook: enabled }), mbEnabled: () => true,
-        fetchChats: async () => [row, ...(shared ? [{ ...row, avatar: 'b.png' }] : [])],
+        settings: () => ({ enabled: true, renameMemoryBook: enabled }), mbEnabled: () => true, mbManual: () => manualMode,
+        fetchChats: async () => [row, ...(staleBranch ? [{ ...row, file_name: "Branch.jsonl", chat_metadata: { main_chat: "Renamed", world_info: "Branch book", STMemoryBooks: { manualLorebook: "Book" } } }] : []), ...(shared ? [{ ...row, avatar: 'b.png' }] : [])],
         characters: [], world_info: {}, power_user: {}, mbSettings: () => ({}),
         exclusiveChatBook, chatStem, world_names: collision ? ['Book', 'Renamed'] : ['Book'],
         updateWorldInfoList: async () => {},
@@ -70,3 +70,16 @@ test('failed book save never relinks or deletes original', async () => {
     assert.equal(metadata.world_info, 'Book');
 });
 test('failed relink never deletes original', async () => assert.equal((await runRename({ failLink: true })).calls.includes('delete'), false));
+
+// A branch can keep an inherited manual marker after switching to its own chat book.
+test('parent with independently linked branch renames while manual mode is off', async () => {
+    const { calls, metadata } = await runRename({ staleBranch: true });
+    assert.equal(metadata.world_info, 'Renamed');
+    assert.equal(calls.includes('delete'), true);
+});
+test('parent stays put when a branch actively uses its manual book', async () => {
+    assert.deepEqual((await runRename({ staleBranch: true, manualMode: true })).calls, []);
+});
+test('real shared chat lorebook blocks rename even outside manual mode', () => {
+    assert.equal(exclusiveChatBook([row, { ...row, file_name: 'Branch', chat_metadata: { main_chat: 'Renamed', world_info: 'Book' } }], target, [], { manualMode: false }), null);
+});

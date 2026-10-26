@@ -5,12 +5,13 @@ export const sameChat = (row, { avatarId, groupId, newFileName }) =>
         : !row.group && row.avatar === avatarId);
 
 /** Only an exclusively chat-linked book can follow its chat's name. */
-export function exclusiveChatBook(rows, target, characterBooks) {
+export function exclusiveChatBook(rows, target, characterBooks, { manualMode = true } = {}) {
     const row = rows.find(row => sameChat(row, target));
     const book = row?.chat_metadata?.world_info;
     if (!book || characterBooks.includes(book)) return null;
     if (rows.some(other => !sameChat(other, target) &&
-        [other.chat_metadata?.world_info, other.chat_metadata?.STMemoryBooks?.manualLorebook].includes(book))) return null;
+        (other.chat_metadata?.world_info === book ||
+            (manualMode && other.chat_metadata?.STMemoryBooks?.manualLorebook === book)))) return null;
     return book;
 }
 export const chatStem = stem;
