@@ -924,8 +924,8 @@ function renderFolder(folder, expandedState) {
     const branchHeading = el('div', 'chatFoldersBranchHeading');
     const branchSort = sortHead.firstElementChild;
     branchSort.replaceWith(branchHeading);
-    branchHeading.append(branchSort);
     if (folderHasBranches(folder)) branchHeading.append(allButton);
+    branchHeading.append(branchSort);
     sortHead.append(el('span', 'chatFoldersSortSpacer'));
     body.append(sortHead, tree);
     let filled = false;
