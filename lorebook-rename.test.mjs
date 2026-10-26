@@ -26,13 +26,14 @@ test('unrelated books do not block rename', () => assert.equal(exclusiveChatBook
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8');
-async function runRename({ enabled = true, shared = false, collision = false, failSave = false, failLink = false, manualMode = false, staleBranch = false } = {}) {
+async function runRename({ enabled = true, shared = false, collision = false, failSave = false, failLink = false, manualMode = false, staleBranch = false, characterLock = false, primaryBook = false } = {}) {
     const calls = [];
     const metadata = { world_info: 'Book', STMemoryBooks: { manualLorebook: 'Book' } };
     const sandbox = {
         settings: () => ({ enabled: true, renameMemoryBook: enabled }), mbEnabled: () => true, mbManual: () => manualMode,
         fetchChats: async () => [row, ...(staleBranch ? [{ ...row, file_name: "Branch.jsonl", chat_metadata: { main_chat: "Renamed", world_info: "Branch book", STMemoryBooks: { manualLorebook: "Book" } } }] : []), ...(shared ? [{ ...row, avatar: 'b.png' }] : [])],
-        characters: [], world_info: {}, power_user: {}, mbSettings: () => ({}),
+        characters: primaryBook ? [{ data: { extensions: { world: 'Book' } } }] : [], world_info: {}, power_user: {},
+        mbSettings: () => ({ characterMemoryBookLocks: characterLock ? { 'a.png': { lorebookName: 'Book' } } : {} }),
         exclusiveChatBook, chatStem, world_names: collision ? ['Book', 'Renamed'] : ['Book'],
         updateWorldInfoList: async () => {},
         post: async (url) => {
@@ -82,4 +83,14 @@ test('parent stays put when a branch actively uses its manual book', async () =>
 });
 test('real shared chat lorebook blocks rename even outside manual mode', () => {
     assert.equal(exclusiveChatBook([row, { ...row, file_name: 'Branch', chat_metadata: { main_chat: 'Renamed', world_info: 'Book' } }], target, [], { manualMode: false }), null);
+});
+
+test('inactive saved character lock does not block a chat book rename', async () => {
+    assert.equal((await runRename({ characterLock: true })).metadata.world_info, 'Renamed');
+});
+test('active character lock protects its book', async () => {
+    assert.deepEqual((await runRename({ characterLock: true, manualMode: true })).calls, []);
+});
+test('actual character lorebook stays protected with manual mode off', async () => {
+    assert.deepEqual((await runRename({ primaryBook: true })).calls, []);
 });

@@ -41,7 +41,6 @@ const settings = () => {
     // linkMemoryBooks stays unset until the user answers the one-time question (askMemoryBooks).
     s.showPinned ??= true;
     s.showFloat ??= true;
-    s.confirmDelete ??= true;
     s.renameMemoryBook ??= true;
     if (!FOLDER_SORTS.includes(s.folderSort)) s.folderSort = 'recent';
     if (!CHAT_SORTS.includes(s.chatSort)) s.chatSort = 'recent';
@@ -246,7 +245,7 @@ async function deleteChat(folder, chat) {
         what.append('Delete ', Object.assign(document.createElement('b'), { textContent: chat.name }),
             ` (${chat.count} messages) from ${folder.name}? This can't be undone.`);
         box.append(title, what);
-        if (settings().confirmDelete && !await callGenericPopup(box, POPUP_TYPE.CONFIRM, '', { okButton: 'Delete', cancelButton: 'Cancel' })) return;
+        if (!await callGenericPopup(box, POPUP_TYPE.CONFIRM, '', { okButton: 'Delete', cancelButton: 'Cancel' })) return;
         if (folder.kind === 'group') {
             await deleteGroupChatByName(folder.groupId, chat.name);
         } else {
@@ -551,7 +550,7 @@ async function renameLinkedMemoryBook(target) {
         const rows = await fetchChats();
         const characterBooks = characters.map(c => c.data?.extensions?.world);
         characterBooks.push(...(world_info?.charLore ?? []).flatMap(x => x.extraBooks ?? []));
-        characterBooks.push(...Object.values(mbSettings()?.characterMemoryBookLocks ?? {}).map(x => x?.lorebookName));
+        if (mbManual()) characterBooks.push(...Object.values(mbSettings()?.characterMemoryBookLocks ?? {}).map(x => x?.lorebookName));
         characterBooks.push(...(world_info?.globalSelect ?? []), power_user.persona_description_lorebook,
             ...Object.values(power_user.persona_descriptions ?? {}).map(x => x?.lorebook));
         const oldBook = exclusiveChatBook(rows, target, characterBooks, { manualMode: mbManual() });
@@ -1371,18 +1370,18 @@ function addSettingsUi() {
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
-                ${check('chatfolders_enabled', 'Group Recent Chats on the welcome screen into one folder per character')}
-                <small>When off, SillyTavern's original list is shown.</small>
-                ${check('chatfolders_pinned', 'Show a Pinned conversations folder at the top')}
-                ${check('chatfolders_float', 'Show the floating expand/collapse-all button')}
-                <div class="menu_button menu_button_icon" id="chatfolders_float_reset" title="Put the floating button back in the corner of the list">
-                    <i class="fa-solid fa-arrows-to-dot"></i><span>Reset button position</span>
+                ${check('chatfolders_enabled', 'Enable Chat Folders')}
+                ${check('chatfolders_pinned', 'Enable Pinned Folder')}
+                <div class="chatfolders-setting-row">
+                    ${check('chatfolders_float', 'Enable Expand All Button')}
+                    <button type="button" class="menu_button" id="chatfolders_float_reset" title="Move the Expand All button back to its default position">Reset Position</button>
                 </div>
-                ${check('chatfolders_confirmdelete', 'Ask before deleting a chat')}
-                ${check('chatfolders_renamemb', 'Rename the exclusive chat lorebook when renaming a chat (requires Memory Books)')}
-                <small>Skips books linked to characters or other chats. Existing book names are never overwritten.</small>
-                ${check('chatfolders_linkmb', 'If Memory Books has a book for a character or chat that has no lorebook, link it as the lorebook')}
-                <small>Only used while Memory Books' Manual Lorebook Mode is on. Linking saves the lorebook into those chats' files.</small>
+                <hr>
+                <b class="chatfolders-settings-heading">Memory Books Integration</b>
+                ${check('chatfolders_renamemb', 'Rename chat-linked lorebooks')}
+                <small>Follow chat renames when the book is used only by that chat. Shared and character-linked books stay unchanged.</small>
+                ${check('chatfolders_linkmb', 'Auto-link Memory Books to chats')}
+                <small>In Memory Books’ Manual Lorebook Mode, link an existing Memory Book when the chat has no lorebook. Also links character-locked books to their characters.</small>
             </div>
         </div>
     </div>`;
@@ -1397,7 +1396,6 @@ function addSettingsUi() {
     bind('chatfolders_enabled', 'enabled', on => { if (on) scan(); else disable(); });
     bind('chatfolders_pinned', 'showPinned', () => syncPins());
     bind('chatfolders_float', 'showFloat', () => applyFloatPosition());
-    bind('chatfolders_confirmdelete', 'confirmDelete');
     bind('chatfolders_renamemb', 'renameMemoryBook');
     bind('chatfolders_linkmb', 'linkMemoryBooks');
     document.getElementById('chatfolders_float_reset').addEventListener('click', () => {
