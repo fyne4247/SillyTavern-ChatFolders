@@ -20,7 +20,7 @@ import {
 } from './startup-pipeline.mjs';
 
 import { power_user } from '../../../power-user.js';
-import { chatStem, exclusiveChatBook, remapBranchCopyIdentity, remapBranchCopyBook } from './lorebook-rename.mjs';
+import { chatStem, exclusiveChatBook, remapBranchCopyIdentity, remapBranchCopyBook, repairRenamedBranchReceipt } from './lorebook-rename.mjs';
 
 const TAG = '[ChatFolders]';
 const SETTINGS_KEY = 'chatFolders';
@@ -214,13 +214,40 @@ let pendingBranchRename = null;
 // Core reloads the chat BEFORE CHAT_RENAMED. Repair its copy receipt before
 // Memory Books handles that reload, otherwise it copies the branch a second time.
 async function preserveRenamedBranchCopy() {
-    const pending = pendingBranchRename;
-    if (!pending || getCurrentChatId() !== pending.newName) return;
+    if (!settings().enabled || !mbEnabled()) return;
+    const chatName = getCurrentChatId();
+    const metadata = chat_metadata;
     const context = SillyTavern.getContext();
-    if (pending.folder.kind === 'group'
-        ? String(context.groupId) !== String(pending.folder.groupId)
-        : characters[this_chid]?.avatar !== pending.folder.avatar) return;
-    if (remapBranchCopyIdentity(chat_metadata, pending.oldName, pending.newName)) await saveMetadata();
+    const target = { avatarId: characters[this_chid]?.avatar, groupId: context.groupId, newFileName: chatName };
+    const stillCurrent = () => chat_metadata === metadata && getCurrentChatId() === chatName &&
+        (target.groupId ? String(SillyTavern.getContext().groupId) === String(target.groupId)
+            : !SillyTavern.getContext().groupId && characters[this_chid]?.avatar === target.avatarId);
+    const pending = pendingBranchRename;
+    if (pending && chatName === pending.newName && (pending.folder.kind === 'group'
+        ? String(context.groupId) === String(pending.folder.groupId)
+        : !context.groupId && target.avatarId === pending.folder.avatar)) {
+        if (remapBranchCopyIdentity(metadata, pending.oldName, pending.newName)) await saveMetadata();
+    }
+    const marker = metadata?.STMemoryBooks?.branchLorebookCopies;
+    // Old rename records can survive across sessions. Repair before Memory Books'
+    // CHAT_CHANGED listener sees them, even when this opening has no pending rename.
+    if (!marker || marker.status !== 'completed' || metadata.world_info !== chatName ||
+        (marker.branchChatId === chatName && marker.mappings?.some(m => m.copyName === chatName))) return;
+    try {
+        const rows = await fetchChats();
+        if (!stillCurrent()) return;
+        const protectedBooks = characters.map(c => c.data?.extensions?.world);
+        protectedBooks.push(...(world_info?.charLore ?? []).flatMap(x => x.extraBooks ?? []));
+        if (mbManual()) protectedBooks.push(...Object.values(mbSettings()?.characterMemoryBookLocks ?? {}).map(x => x?.lorebookName));
+        protectedBooks.push(...(world_info?.globalSelect ?? []), power_user.persona_description_lorebook,
+            ...Object.values(power_user.persona_descriptions ?? {}).map(x => x?.lorebook));
+        if (repairRenamedBranchReceipt(metadata, rows, target, protectedBooks, { manualMode: mbManual() })) {
+            await saveMetadata();
+            console.info(TAG, 'Repaired renamed branch lorebook receipt');
+        }
+    } catch (error) {
+        console.error(TAG, 'Could not repair renamed branch lorebook receipt', error);
+    }
 }
 
 async function renameFolderChat(folder, oldName, newName, options) {

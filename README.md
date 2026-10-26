@@ -60,6 +60,7 @@ Auto-linking and manual book selection use Memory Books’ **Manual Lorebook Mod
 - If some chats have a manual-mode Memory Book but no lorebook, Chat Folders asks once whether to **link those books as their lorebooks**. Saying yes saves the lorebook into those chats. Choosing "None" for a chat is remembered, and it won't be linked again. Characters with a Memory Books lock get their locked book the same way.
 - Picking a lorebook in Chat Folders also points Memory Books at that book.
 - Renaming a chat also renames its chat-level lorebook to the new chat name and updates its Memory Books manual link when that link points to the same book. This is on by default and can be turned off in Chat Folders settings. It requires Memory Books to be enabled. Books linked to any character (including active character locks), another chat, a persona, or globally are left alone. An existing book with the new name is never overwritten. If saving or relinking fails, the original book is kept; a new copy may also remain for recovery.
+- Opening a previously renamed branch repairs a recognizable stale Memory Books copy record before Memory Books processes the chat. This covers a single copied book named after the chat, used exclusively by that chat; shared books and ambiguous records are left alone. Existing duplicate lorebooks are not deleted.
 - Linking follows manual mode live: turn manual mode off and it stops, turn it back on and it picks up again with your earlier answer.
 - Characters with a Memory Books lock show a lock tag.
 

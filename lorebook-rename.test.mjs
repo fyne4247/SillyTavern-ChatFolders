@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chatStem, exclusiveChatBook, sameChat, remapBranchCopyIdentity, remapBranchCopyBook } from './lorebook-rename.mjs';
+import { chatStem, exclusiveChatBook, sameChat, remapBranchCopyIdentity, remapBranchCopyBook, repairRenamedBranchReceipt } from './lorebook-rename.mjs';
 const target = { avatarId: 'a.png', newFileName: 'Renamed.jsonl' };
 const row = { avatar: 'a.png', file_name: 'Renamed.jsonl', chat_metadata: { world_info: 'Book' } };
 test('exclusive chat book follows a rename', () => assert.equal(exclusiveChatBook([row], target, []), 'Book'));
@@ -119,6 +119,7 @@ test('reload hook repairs the receipt before later chat-change listeners run', a
     const metadata = { STMemoryBooks: { branchLorebookCopies: { version: 1, status: 'completed', branchChatId: 'Old' } } };
     let saves = 0;
     const sandbox = {
+        settings: () => ({ enabled: true }), mbEnabled: () => true,
         getCurrentChatId: () => 'New', SillyTavern: { getContext: () => ({}) },
         characters: [{ avatar: 'a.png' }], this_chid: 0, chat_metadata: metadata,
         remapBranchCopyIdentity, saveMetadata: async () => { saves++; },

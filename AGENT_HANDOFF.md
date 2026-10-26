@@ -1,15 +1,28 @@
-# Branch rename compatibility fix
+# Branch reopen compatibility fix
 
-Objective: renaming a branch through Chat Folders must continue renaming its exclusive chat-linked lorebook without Memory Books creating another branch copy. Only Chat Folders may be edited. No user-data repair or Memory Books changes authorized. Owner subsequently authorized merging and pushing main.
+## Objective and scope
 
-Baseline: main c2a3967. Task branch: fix/branch-rename-copy-receipt. Preexisting untracked futureplan.md is untouched and excluded.
+Stop repeat Memory Books copies when opening previously renamed chats. Chat and exclusive lorebook must still rename together. Change only Chat Folders; preserve user data and Memory Books source. Routine task, no phase workflow or delegated review.
 
-Implemented: known Chat Folders rename supplies a pending identity; a first CHAT_CHANGED listener updates a completed Memory Books copy receipt before the core reload reaches Memory Books. Inactive character chats receive identity repair after the core operation. Lorebook rename updates matching receipt copyName entries together with world_info/manualLorebook, retaining lineage roots and other mappings. Both chat and lorebook names still follow the requested rename. Existing sharing/collision checks remain.
+## Current work
 
-Verified: 25 Node tests pass; index.js syntax and whitespace checks pass. Separate in-memory check with the installed Memory Books branch controller confirms zero extra copy writes both at the early reload and after the book rename. No real chats or lorebooks were changed during tests. No browser verification performed. Separate native chat-menu renames do not receive the early pending-rename protection; sanitized chat names and inactive group receipts need further coverage. No independent agent review claimed.
+Baseline main a7d8cb8; task branch fix/reopen-renamed-branch. Preexisting untracked futureplan.md is untouched and excluded. Prior fix 67122b3 only handled a pending rename. The owner confirmed duplicates appear on opening a chat without renaming.
 
-Installed only index.js and lorebook-rename.mjs into local SillyTavern Chat Folders; bytes verified. Original backup: /Users/fish4247/Library/Application Support/SillyTavern-fixes/chatfolders-branch-rename-20261026-183257. Memory Books and Rename Relink files untouched. Existing duplicates untouched. Owner approved merging to main and pushing origin/main; see Git refs for the resulting state.
+The CHAT_CHANGED listener now also recognizes stale, completed single-book copy receipts on reopen: the selected book must have the chat's name and be exclusive, the old chat identity must no longer exist if different, and the receipt must not describe multiple books. Character/global/persona protections and manual-mode checks apply. Repairs update the copy identity/name before Memory Books sees the event. An already-completed rollback receipt follows a proven identity rename so rollback is not accidentally repeated. A chat switch during inspection cancels the repair. Healthy receipts avoid the additional chat listing.
+
+Existing copies are not deleted or relinked automatically. Ambiguous receipts, shared books, missing/failed receipts and multi-book cases remain unchanged. The repair takes effect after the browser reloads the extension. Native rename events with sanitized names and inactive group rename receipts remain outside the earlier pending-rename fix; recognizable stale records can now be repaired on subsequent opening.
+
+## Evidence
+
+42 Node tests pass, including two optional integrations against the installed, unmodified Memory Books branch controller. The actual Chat Folders opening handler is exercised without a pending rename: unguarded stale metadata creates an extra copy; guarded metadata creates none across repeated opens. A genuine new branch still gets exactly one copy. Tests cover shared/character books, old chat existence, groups, manual mode, missing and failed receipts, multi-book records, idempotence and switching chats during inspection. Syntax and whitespace checks pass. No real chat/lorebook writes occurred in tests. Read-only header inspection confirmed stale receipts in the local data. No real-browser verification or independent review claimed.
+
+Run portable checks: `node --test *.test.mjs` (the two real-controller tests skip without configuration).
+Run integration: set `STMB_BRANCH_MODULE` to the installed Memory Books `branchLorebooks.js` and run the same command. All controller writes are in-memory mocks.
+
+## Installation and repository state
+
+Install as a committed fast-forward in the local Chat Folders extension checkout so its Git record matches its files. Keep the prior installed commit as a backup branch. No Memory Books or Rename Relink edits, no existing duplicate cleanup, no source main merge, no push for this follow-up. Previous permission to push covered the earlier delivered fix.
 
 ## NEXT ACTION
 
-Reload SillyTavern to load the corrected Chat Folders files. Verify a branch rename through Chat Folders renames both chat and exclusive lorebook and reopening does not create another book. Preserve existing duplicates pending an explicit cleanup request. Extend early protection to native-menu renames only with an evidence-based approach; core emits CHAT_RENAMED after reload.
+Reload the SillyTavern browser page to load Chat Folders 1.8.1. Open an affected renamed chat and check that repeated opens create no additional book. Preserve existing duplicates pending a separate cleanup decision. If the issue persists, inspect only the affected chat header, selected book and receipt, plus listener ordering, without reading message content unnecessarily.
