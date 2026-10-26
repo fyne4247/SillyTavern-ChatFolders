@@ -11,7 +11,8 @@
     --cf-lore: 22em; /* one fixed size for every dropdown; steps down with the space (below) */
     --cf-name: minmax(9em, 1fr);
     --cf-count: 5.3em;
-    --cf-date: 6.6em;
+    --cf-messages: 7em;
+    --cf-date: 7.8em;
     --cf-actions: 4.8em;
     display: flex; flex-direction: column; gap: 4px; width: 100%;
     container-type: inline-size; container-name: chatfolders;
@@ -25,11 +26,11 @@
     padding: 0 var(--cf-pad); min-height: var(--cf-row);
 }
 .chatFoldersHeader {
-    grid-template-columns: auto auto minmax(0, 1fr) var(--cf-lore) var(--cf-count) var(--cf-count) var(--cf-date) var(--cf-actions);
+    grid-template-columns: auto auto minmax(0, 1fr) var(--cf-lore) var(--cf-count) var(--cf-messages) var(--cf-date) var(--cf-actions);
     padding-top: 4px; padding-bottom: 4px; cursor: pointer;
 }
 .chatFoldersChat {
-    grid-template-columns: var(--cf-name) var(--cf-lore) var(--cf-count) var(--cf-count) var(--cf-date) var(--cf-actions);
+    grid-template-columns: var(--cf-name) var(--cf-lore) var(--cf-count) var(--cf-messages) var(--cf-date) var(--cf-actions);
     cursor: pointer;
 }
 .chatFoldersChat + .chatFoldersChat { border-top: 1px solid var(--SmartThemeBorderColor); }
@@ -102,9 +103,9 @@
 }
 
 @media screen and (max-width: 600px) {
-    .chatfolders-root { --cf-pad: 6px; --cf-count: 4.6em; --cf-date: 6.4em; --cf-actions: 4.8em; }
+    .chatfolders-root { --cf-pad: 6px; --cf-count: 4.6em; --cf-messages: 4.6em; --cf-date: 6.4em; --cf-actions: 4.8em; }
     /* header: name on line 1, counts on line 2, lorebook on line 3 */
-    .chatFoldersHeader { grid-template-columns: auto auto minmax(0, 1fr) var(--cf-count) var(--cf-count) var(--cf-date) var(--cf-actions); row-gap: 3px; }
+    .chatFoldersHeader { grid-template-columns: auto auto minmax(0, 1fr) var(--cf-count) var(--cf-messages) var(--cf-date) var(--cf-actions); row-gap: 3px; }
     .chatFoldersHeader .chatFoldersCarets, .chatFoldersHeader .avatar { grid-row: 1 / span 3; }
     .chatFoldersHeader .chatFoldersInfo { grid-column: 3 / -1; grid-row: 1; }
     .chatFoldersHeader > .chatFoldersMeta > :nth-child(1) { grid-column: 4; grid-row: 2; }
@@ -113,7 +114,7 @@
     .chatFoldersHeader > .chatFoldersLore { grid-column: 3 / -1; grid-row: 3; }
     .chatFoldersHeader .chatFoldersSpacer { display: none; }
     /* chats: name on line 1, then lorebook | messages | date | actions */
-    .chatFoldersChat { grid-template-columns: minmax(0, 1fr) var(--cf-count) var(--cf-date) var(--cf-actions); padding-top: 3px; padding-bottom: 3px; }
+    .chatFoldersChat { grid-template-columns: minmax(0, 1fr) var(--cf-messages) var(--cf-date) var(--cf-actions); padding-top: 3px; padding-bottom: 3px; }
     .chatFoldersChat .chatFoldersChatName { grid-column: 1 / -1; }
     .chatFoldersChat .chatFoldersSpacer { display: none; }
     .chatFoldersAction { opacity: 0.6; }
@@ -162,22 +163,21 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
     min-height: var(--cf-row); padding: 2px var(--cf-pad); color: var(--SmartThemeBodyColor);
 }
 .chatFoldersSortRow-folders {
-    grid-template-columns: auto auto minmax(0, 1fr) var(--cf-lore) var(--cf-count) var(--cf-count) var(--cf-date) var(--cf-actions);
+    grid-template-columns: auto auto minmax(0, 1fr) var(--cf-lore) var(--cf-count) var(--cf-messages) var(--cf-date) var(--cf-actions);
     border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 .chatFoldersSortRow-chats {
-    grid-template-columns: var(--cf-name) var(--cf-lore) var(--cf-count) var(--cf-count) var(--cf-date) var(--cf-actions);
+    grid-template-columns: var(--cf-name) var(--cf-lore) var(--cf-count) var(--cf-messages) var(--cf-date) var(--cf-actions);
     border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 .chatFoldersSortSpacer { min-width: 0; }
 .chatFoldersSortButton {
-    display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px;
+    display: inline-flex; align-items: center; justify-content: flex-start; gap: 4px;
+    text-align: left;
     min-width: 0; width: 100%; padding: 3px 4px; overflow: hidden;
     border: 1px solid transparent; border-radius: 5px; background: transparent;
     color: inherit; font-size: var(--cf-font); line-height: 1.2; white-space: nowrap; cursor: pointer;
 }
-.chatFoldersSortRow-folders [data-sort-label="Character"],
-.chatFoldersSortRow-chats [data-sort-label="Branch"] { justify-content: flex-start; }
 .chatFoldersSortText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .chatFoldersSortArrow { flex: 0 0 auto; font-size: 0.75em; opacity: 0.45; }
 .chatFoldersSortActive { border-color: var(--SmartThemeBorderColor); background: var(--white30a); color: var(--SmartThemeQuoteColor); }
@@ -196,7 +196,7 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
 .chatFoldersBody > .chatFoldersSortRow { flex: 0 0 auto; }
 @media screen and (max-width: 600px) {
     .chatFoldersSortRow-folders {
-        grid-template-columns: auto auto minmax(0, 1fr) var(--cf-count) var(--cf-count) var(--cf-date) var(--cf-actions);
+        grid-template-columns: auto auto minmax(0, 1fr) var(--cf-count) var(--cf-messages) var(--cf-date) var(--cf-actions);
         grid-template-rows: auto auto; row-gap: 2px;
     }
     .chatFoldersSortRow-folders > .chatFoldersSortSpacer { display: none; }
@@ -207,7 +207,7 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
     .chatFoldersSortRow-folders [data-sort-label="Last active"] { grid-column: 6; grid-row: 2; }
 
     .chatFoldersSortRow-chats {
-        grid-template-columns: minmax(0, 1fr) var(--cf-count) var(--cf-date) var(--cf-actions);
+        grid-template-columns: minmax(0, 1fr) var(--cf-messages) var(--cf-date) var(--cf-actions);
         grid-template-rows: auto auto; row-gap: 2px;
     }
     .chatFoldersSortRow-chats > .chatFoldersSortLoreSpacer,
@@ -226,7 +226,7 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
    wider readable count labels do not squeeze the character/avatar off-screen. */
 @media screen and (max-width: 600px) {
     .chatFoldersHeader, .chatFoldersSortRow-folders {
-        grid-template-columns: auto auto minmax(0, 1fr) var(--cf-count) var(--cf-count) var(--cf-date);
+        grid-template-columns: auto auto minmax(0, 1fr) var(--cf-count) var(--cf-messages) var(--cf-date);
         column-gap: 6px;
     }
 }
