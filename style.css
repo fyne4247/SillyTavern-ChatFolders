@@ -245,3 +245,54 @@ i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
 .chatfolders-setting-row .menu_button { width: auto; margin: 0; padding: 2px 6px; font-size: 0.85em; }
 .chatfolders-settings-heading { display: block; margin-bottom: 6px; }
 .chatfolders-settings .inline-drawer-content > small { display: block; margin: 2px 0 10px; opacity: 0.8; }
+
+/* Chat Top Bar sidebar (#extensionSideBar): our folders replace its list while it's open.
+   The sidebar is narrow, so lorebook pickers are left to the welcome screen and each row stacks
+   its name over its numbers. Kept last so it wins over the wider layouts above. */
+#extensionSideBar.chatfolders-sidebar-on #extensionSideBarContainer,
+#extensionSideBar.chatfolders-sidebar-on #extensionSideBarLoader { display: none; }
+.chatfolders-root.chatfolders-sidebar {
+    flex: 1; min-height: 0; overflow-y: auto; align-self: stretch;
+    margin-top: 1.5em; padding: 2px; gap: 2px;
+}
+.chatfolders-root.chatfolders-sidebar .chatFoldersLore,
+.chatfolders-root.chatfolders-sidebar .chatFoldersSpacer,
+.chatfolders-root.chatfolders-sidebar .chatFoldersSortSpacer,
+.chatfolders-root.chatfolders-sidebar .chatFoldersSortLoreSpacer { display: none; }
+
+.chatfolders-root.chatfolders-sidebar .chatFoldersSortRow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 2px 6px;
+}
+.chatfolders-root.chatfolders-sidebar .chatFoldersSortButton { width: auto; }
+
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader {
+    grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: auto auto;
+    column-gap: 6px; row-gap: 1px; padding: 3px 6px;
+}
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader > .chatFoldersCarets,
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader > .avatar,
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader > .chatFoldersPinnedIcon { grid-row: 1 / span 2; }
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader > .chatFoldersInfo { grid-column: 3; grid-row: 1; }
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader > .chatFoldersMeta {
+    display: flex; gap: 10px; grid-column: 3; grid-row: 2; opacity: 0.85;
+}
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader > .chatFoldersMeta > * { grid-column: auto; grid-row: auto; }
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader .avatar,
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader .avatar img { width: 34px; height: 34px; min-width: 34px; }
+
+.chatfolders-root.chatfolders-sidebar .chatFoldersChat {
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto;
+    column-gap: 6px; row-gap: 0; padding: 3px 6px;
+}
+.chatfolders-root.chatfolders-sidebar .chatFoldersChat > .chatFoldersChatName { grid-column: 1; grid-row: 1; }
+.chatfolders-root.chatfolders-sidebar .chatFoldersChat > .chatFoldersActions { grid-column: 2; grid-row: 1 / span 2; }
+/* numbers line up under the chat name: indent by depth plus the caret slot */
+.chatfolders-root.chatfolders-sidebar .chatFoldersChat > .chatFoldersMeta {
+    display: flex; gap: 10px; grid-column: 1; grid-row: 2; opacity: 0.8;
+    padding-left: calc(var(--cf-depth, 0) * 1.3em + 1.25em + 4px);
+}
+.chatfolders-root.chatfolders-sidebar .chatFoldersChat > .chatFoldersMeta > * { font-size: calc(var(--mainFontSize) * 0.8); }
+.chatfolders-root.chatfolders-sidebar .chatFoldersCurrent { background-color: var(--cobalt30a); }
+/* empty placeholders that hold the lorebook column on the welcome screen */
+.chatfolders-root.chatfolders-sidebar .chatFoldersHeader > span:not([class]),
+.chatfolders-root.chatfolders-sidebar .chatFoldersChat > span:not([class]) { display: none; }

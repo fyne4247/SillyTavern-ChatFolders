@@ -42,6 +42,7 @@ const settings = () => {
     s.showPinned ??= true;
     s.showFloat ??= true;
     s.renameMemoryBook ??= true;
+    s.sidebar ??= true;
     if (!FOLDER_SORTS.includes(s.folderSort)) s.folderSort = 'recent';
     if (!CHAT_SORTS.includes(s.chatSort)) s.chatSort = 'recent';
     return s;
@@ -121,7 +122,7 @@ function setSharedChatSort(value) {
     settings().chatSort = value;
     saveSettingsDebounced();
     rowGestures.dispose();
-    for (const api of folderApi.values()) api.applyChatSort(value);
+    for (const [, api] of liveApis()) api.applyChatSort(value);
 }
 const enhanced = new WeakSet();
 const panelRuns = new WeakMap();
@@ -129,8 +130,16 @@ const panelRoots = new WeakMap();
 const lorebookEditVersions = new Map();
 const runLorebookWrite = createKeyedWriteQueue();
 const startupPipeline = createStartupPipeline();
-/** @type {Map<string, {setOpen: Function, box: HTMLElement, folder: object}>} */
-const folderApi = new Map();
+// One map per rendered list (welcome screen, Chat Top Bar sidebar), since both can be on screen at once.
+/** @type {Map<HTMLElement, Map<string, {setOpen: Function, box: HTMLElement, folder: object}>>} */
+const folderApis = new Map();
+const rootApis = (root) => {
+    let apis = folderApis.get(root);
+    if (!apis) folderApis.set(root, apis = new Map());
+    return apis;
+};
+/** [key, api] for every folder in a list still on the page. */
+const liveApis = () => [...folderApis].flatMap(([root, apis]) => root.isConnected ? [...apis] : []);
 const rowGestures = createRowGestureCoordinator();
 
 // ---- expanded-state persistence (localStorage may be unavailable) ----
@@ -222,13 +231,13 @@ async function renameChat(folder, chat) {
             const after = await listChatNames(folder.avatar);
             const actual = after.find(n => !before.includes(n));
             if (!actual || after.includes(chat.name)) {
-                await openWelcomeScreen({ force: true });
+                await refreshLists();
                 return;
             }
             // Core moves the "last chat" pointer only for the active character; keep it valid for the others.
             if (wasCurrent && String(id) !== String(this_chid)) await updateRemoteChatName(id, actual);
         }
-        await openWelcomeScreen({ force: true });
+        await refreshLists();
         toastr.success('Chat renamed.', 'Chat Folders');
     } catch (e) {
         console.error(TAG, e);
@@ -253,7 +262,7 @@ async function deleteChat(folder, chat) {
             if (id === -1) throw new Error('character not found: ' + folder.avatar);
             await deleteCharacterChatByName(String(id), chat.name);
         }
-        await openWelcomeScreen({ force: true });
+        await refreshLists();
         toastr.success('Chat deleted.', 'Chat Folders');
     } catch (e) {
         console.error(TAG, e);
@@ -419,7 +428,7 @@ function lorebookSelect(current, title, suggested, onPick, editTarget) {
             console.error(TAG, e);
             toastr.error('Failed to change lorebook. See console for details.', 'Chat Folders');
         }
-        await openWelcomeScreen({ force: true });
+        await refreshLists();
     });
     wrap.append(sel, openBtn);
     return wrap;
@@ -495,8 +504,8 @@ const PIN_FOLDER_KEY = 'p:pinned';
 let pinnedNow = new Set();
 // The pins as last read or written here. Stock's rename handler saves from a copy it loaded at startup.
 let knownPins = null;
-/** @type {{root: HTMLElement, folders: object[]} | null} */
-let pinHost = null;
+/** Each rendered list and the folders it shows, so pins can be refreshed in place. @type {Map<HTMLElement, object[]>} */
+const pinHosts = new Map();
 
 function readPins() {
     try {
@@ -605,14 +614,17 @@ function setPinMark(row, on) {
 
 /** Refresh every pin mark and rebuild the Pinned folder from the store. */
 function syncPins() {
-    if (!pinHost?.root.isConnected) return;
+    for (const root of pinHosts.keys()) if (!root.isConnected) pinHosts.delete(root);
+    if (!pinHosts.size) return;
     pinnedNow = pinnedKeys();
-    for (const row of pinHost.root.querySelectorAll('.chatFoldersChat[data-pin-key]')) setPinMark(row, pinnedNow.has(row.dataset.pinKey));
-    renderPinned(pinHost.root, pinHost.folders);
+    for (const [root, folders] of pinHosts) {
+        for (const row of root.querySelectorAll('.chatFoldersChat[data-pin-key]')) setPinMark(row, pinnedNow.has(row.dataset.pinKey));
+        renderPinned(root, folders);
+    }
 }
 
 function renderPinned(root, folders, expanded = loadExpanded()) {
-    folderApi.delete(PIN_FOLDER_KEY);
+    rootApis(root).delete(PIN_FOLDER_KEY);
     root.querySelector(':scope > .chatFoldersPinned')?.remove();
     const entries = [];
     if (pinnedNow.size && settings().showPinned) {
@@ -624,7 +636,7 @@ function renderPinned(root, folders, expanded = loadExpanded()) {
             walk(folder.chats);
         }
     }
-    if (entries.length) root.querySelector(':scope > .chatFoldersSortRow-folders')?.after(renderPinnedFolder(entries, expanded));
+    if (entries.length) root.querySelector(':scope > .chatFoldersSortRow-folders')?.after(renderPinnedFolder(entries, expanded, rootApis(root)));
     updateFloat();
 }
 
@@ -870,7 +882,7 @@ function folderAvatar(folder) {
     return wrap;
 }
 
-function renderFolder(folder, expandedState) {
+function renderFolder(folder, expandedState, apis) {
     const box = el('div', 'chatFoldersFolder');
     const head = el('div', 'chatFoldersHeader');
     head.tabIndex = 0;
@@ -959,7 +971,7 @@ function renderFolder(folder, expandedState) {
     box.append(head, body);
     setOpen(!!expandedState[folder.key], false);
     updateAllButton(box, allButton, folder);
-    folderApi.set(folder.key, { setOpen, applyChatSort, box, folder });
+    apis.set(folder.key, { setOpen, applyChatSort, box, folder });
     return box;
 }
 
@@ -972,7 +984,7 @@ function pinnedAvatar(folder) {
 }
 
 /** The Pinned folder: every pinned chat from every character, flat, ordered by the shared chat sort. */
-function renderPinnedFolder(entries, expandedState) {
+function renderPinnedFolder(entries, expandedState, apis) {
     const owner = new Map(entries.map(({ folder, chat }) => [chat, folder]));
     const chats = entries.map(({ chat }) => chat);
     const box = el('div', 'chatFoldersFolder chatFoldersPinned');
@@ -1033,7 +1045,7 @@ function renderPinnedFolder(entries, expandedState) {
     head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
     box.append(head, body);
     setOpen(!!expandedState[PIN_FOLDER_KEY], false);
-    folderApi.set(PIN_FOLDER_KEY, { setOpen, applyChatSort, box, folder: null });
+    apis.set(PIN_FOLDER_KEY, { setOpen, applyChatSort, box, folder: null });
     return box;
 }
 
@@ -1057,7 +1069,9 @@ function characterLoreTags(folder) {
 
 function renderInto(root, folders) {
     rowGestures.dispose();
-    folderApi.clear();
+    for (const old of folderApis.keys()) if (!old.isConnected) folderApis.delete(old);
+    const apis = new Map();
+    folderApis.set(root, apis);
     root.replaceChildren();
     const st = loadExpanded();
     if (st.__expandAll) {
@@ -1072,16 +1086,16 @@ function renderInto(root, folders) {
         saveSettingsDebounced();
         syncSortHeader(folderSortHead, s.folderSort);
         for (const folder of sortFolders(folders, s.folderSort, folderBook)) {
-            const api = folderApi.get(folder.key);
+            const api = apis.get(folder.key);
             if (api) root.append(api.box);
         }
     });
     root.append(folderSortHead);
-    pinHost = { root, folders };
+    pinHosts.set(root, folders);
     pinnedNow = pinnedKeys();
     if (!folders.length) { root.append(el('div', 'chatFoldersEmpty', 'No chats')); applyFloatPosition(); return; }
     const expanded = loadExpanded();
-    for (const folder of sortFolders(folders, settings().folderSort, folderBook)) root.append(renderFolder(folder, expanded));
+    for (const folder of sortFolders(folders, settings().folderSort, folderBook)) root.append(renderFolder(folder, expanded, apis));
     renderPinned(root, folders, expanded);
     applyFloatPosition();
 }
@@ -1160,7 +1174,108 @@ function enhance(panel) {
     });
 }
 
+// ---- Chat Top Bar sidebar hook ----
+// third-party/Extension-TopInfoBar adds #extensionSideBar (current character's chats only) and toggles its
+// "visible" class. While it's open, our folders take the place of its list; its own list stays underneath, hidden.
+const SIDEBAR_ID = 'extensionSideBar';
+const SIDEBAR_ON = 'chatfolders-sidebar-on';
+let sidebarRoot = null;
+let sidebarRun = 0;
+let sidebarHooked = null;
+let sidebarRevealed = null;
+let sidebarTimer = 0;
+
+const sidebarWanted = (bar) => !!bar?.classList.contains('visible') && settings().enabled && settings().sidebar;
+
+function hookSidebar() {
+    const bar = document.getElementById(SIDEBAR_ID);
+    if (!bar || sidebarHooked === bar) return;
+    sidebarHooked = bar;
+    let wasVisible = bar.classList.contains('visible');
+    // Only react to the sidebar opening or closing, not to our own class changes.
+    new MutationObserver(() => {
+        const visible = bar.classList.contains('visible');
+        if (visible === wasVisible) return;
+        wasVisible = visible;
+        void refreshSidebar();
+    }).observe(bar, { attributes: true, attributeFilter: ['class'] });
+    void refreshSidebar();
+}
+
+function queueSidebarRefresh() {
+    clearTimeout(sidebarTimer);
+    sidebarTimer = setTimeout(() => void refreshSidebar(), 300);
+}
+
+function dropSidebar(bar) {
+    sidebarRun++;
+    sidebarRoot?.remove();
+    sidebarRoot = null;
+    sidebarRevealed = null;
+    bar?.classList.remove(SIDEBAR_ON);
+    applyFloatPosition();
+}
+
+async function refreshSidebar() {
+    const bar = document.getElementById(SIDEBAR_ID);
+    if (!sidebarWanted(bar)) { dropSidebar(bar); return; }
+    const run = ++sidebarRun;
+    if (!sidebarRoot?.isConnected) {
+        sidebarRoot = el('div', `${ROOT_CLASS} chatfolders-sidebar chatFoldersLoading`);
+        sidebarRoot.append(el('div', 'chatFoldersLoadingMessage', 'Loading chats…'));
+        bar.append(sidebarRoot);
+        bar.classList.add(SIDEBAR_ON);
+        sidebarRevealed = null;
+    }
+    let folders;
+    try {
+        folders = buildFolders(await fetchChats(), { characters, groups, toMs });
+    } catch (error) {
+        console.warn(TAG, 'falling back to the Chat Top Bar list', error);
+        if (run === sidebarRun) dropSidebar(bar);
+        return;
+    }
+    if (run !== sidebarRun || !sidebarRoot?.isConnected || !sidebarWanted(bar)) return;
+    // A refresh keeps the scroll position; only a new current chat scrolls itself into view.
+    const scrollTop = sidebarRoot.scrollTop;
+    sidebarRoot.classList.remove('chatFoldersLoading');
+    renderInto(sidebarRoot, folders);
+    sidebarRoot.scrollTop = scrollTop;
+    revealCurrentChat(sidebarRoot);
+}
+
+/** Open the current chat's folder and parent branches (not saved), mark its row, and scroll to it once. */
+function revealCurrentChat(root) {
+    const chatId = getCurrentChatId();
+    if (!chatId) return;
+    const { groupId } = SillyTavern.getContext();
+    const key = groupId ? 'g:' + groupId : 'c:' + characters[this_chid]?.avatar;
+    const api = rootApis(root).get(key);
+    if (!api) return;
+    api.setOpen(true, false);
+    const row = [...api.box.querySelectorAll('.chatFoldersChat')].find(r => r.dataset.chatName === chatId);
+    if (!row) return;
+    row.classList.add('chatFoldersCurrent');
+    for (let node = row.parentElement?.parentElement?.closest('.chatFoldersBranchNode'); node && api.box.contains(node);
+        node = node.parentElement?.closest('.chatFoldersBranchNode')) {
+        node.classList.add('open');
+        syncBranchCaret(node);
+    }
+    const shown = `${key}\u0000${chatId}`;
+    if (sidebarRevealed !== shown) {
+        sidebarRevealed = shown;
+        row.scrollIntoView({ block: 'center' });
+    }
+}
+
+/** Rebuild every list on screen after a change made from one of them. */
+async function refreshLists() {
+    await openWelcomeScreen({ force: true }); // does nothing while a chat is open
+    await refreshSidebar();
+}
+
 function scan() {
+    hookSidebar();
     if (!document.querySelector('.' + ROOT_CLASS)) rowGestures.dispose();
     document.querySelectorAll('#chat .welcomePanel').forEach(p => {
         if (enhanced.has(p) && !panelRoots.get(p)?.isConnected) {
@@ -1177,8 +1292,11 @@ function scan() {
 
 function disable() {
     rowGestures.dispose();
-    folderApi.clear();
+    folderApis.clear();
     document.querySelectorAll('.' + ROOT_CLASS).forEach(n => n.remove());
+    document.getElementById(SIDEBAR_ID)?.classList.remove(SIDEBAR_ON);
+    sidebarRoot = null;
+    sidebarRun++;
     document.querySelectorAll('.welcomePanel.' + ENHANCED).forEach(p => {
         p.classList.remove(ENHANCED);
         enhanced.delete(p);
@@ -1186,7 +1304,7 @@ function disable() {
         panelRoots.delete(p);
         startupPipeline.invalidate(p);
     });
-    pinHost = null;
+    pinHosts.clear();
     updateFloat();
     applyFloatPosition();
 }
@@ -1205,15 +1323,15 @@ function folderRecordOpen(st) {
 }
 
 function anyFolderOpen() {
-    const live = [...folderApi.values()].filter(api => api.box.isConnected);
-    if (live.length) return live.some(api => api.box.classList.contains('open'));
+    const live = liveApis();
+    if (live.length) return live.some(([, api]) => api.box.classList.contains('open'));
     const st = loadExpanded();
     return !!st.__expandAll || folderRecordOpen(st);
 }
 
 function setEveryFolder(open) {
     const st = loadExpanded();
-    const live = [...folderApi.entries()].filter(([, api]) => api.box.isConnected);
+    const live = liveApis();
     if (live.length) {
         delete st.__expandAll;
         for (const [key, api] of live) {
@@ -1377,6 +1495,10 @@ function addSettingsUi() {
                     <button type="button" class="menu_button" id="chatfolders_float_reset" title="Move the Expand All button back to its default position">Reset Position</button>
                 </div>
                 <hr>
+                <b class="chatfolders-settings-heading">Chat Top Bar</b>
+                ${check('chatfolders_sidebar', 'Sidebar override')}
+                <small>Show every chat as folders in the Chat Top Bar sidebar, instead of only the current character's chats.</small>
+                <hr>
                 <b class="chatfolders-settings-heading">Memory Books Integration</b>
                 ${check('chatfolders_renamemb', 'Rename chat-linked lorebooks')}
                 <small>Follow chat renames when the book is used only by that chat. Shared and character-linked books stay unchanged.</small>
@@ -1393,7 +1515,8 @@ function addSettingsUi() {
         box.checked = !!settings()[key];
         box.addEventListener('change', () => { settings()[key] = box.checked; saveSettingsDebounced(); after(box.checked); });
     };
-    bind('chatfolders_enabled', 'enabled', on => { if (on) scan(); else disable(); });
+    bind('chatfolders_enabled', 'enabled', on => { if (on) { scan(); void refreshSidebar(); } else disable(); });
+    bind('chatfolders_sidebar', 'sidebar', () => void refreshSidebar());
     bind('chatfolders_pinned', 'showPinned', () => syncPins());
     bind('chatfolders_float', 'showFloat', () => applyFloatPosition());
     bind('chatfolders_renamemb', 'renameMemoryBook');
@@ -1432,6 +1555,9 @@ function migrateStorageKeys() {
         eventSource.on(event_types.APP_READY, scan);
         eventSource.makeLast(event_types.CHAT_RENAMED, onChatRenamed);
         eventSource.on(event_types.CHAT_RENAMED, renameLinkedMemoryBook);
+        for (const type of [event_types.CHAT_CHANGED, event_types.CHAT_RENAMED, event_types.CHAT_DELETED, event_types.GROUP_CHAT_DELETED]) {
+            eventSource.on(type, queueSidebarRefresh);
+        }
         scan();
         console.log(TAG, 'loaded');
     } catch (e) {

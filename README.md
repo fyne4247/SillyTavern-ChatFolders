@@ -18,6 +18,7 @@ Built for long-running roleplays with lots of branches and checkpoints, where th
 - **Rename and delete** chats from the list.
 - **Expand/collapse all**: a button per folder for its branches, and a floating button for every folder. The floating button can be dragged anywhere and remembers where you put it.
 - Open/closed folders are remembered between visits.
+- **Chat Top Bar sidebar:** if you use the [Chat Top Bar](https://github.com/SillyTavern/Extension-TopInfoBar) extension, its sidebar shows every chat as folders instead of only the current character's chats. The open chat is highlighted and its folder opens on its own.
 - Optional [Memory Books](https://github.com/aikohanasaki/SillyTavern-MemoryBooks) integration (see below).
 
 ## Installation
@@ -44,6 +45,7 @@ In **Extensions → Chat Folders**:
 | Enable Pinned Folder | On | Hide the Pinned folder (pins themselves are kept) |
 | Enable Expand All Button | On | Hide the floating button |
 | Reset Position | | Puts the floating button back in the corner of the list |
+| Sidebar override | On | Chat Top Bar only: show the folders in its sidebar |
 | Rename chat-linked lorebooks | On | Requires Memory Books; skips character-linked and shared books |
 | Auto-link Memory Books to chats | Asked when needed | Manual Lorebook Mode only; see below |
 
