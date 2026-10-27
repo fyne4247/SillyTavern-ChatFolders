@@ -1061,6 +1061,8 @@ function renderPinnedFolder(entries, expandedState, apis) {
     const owner = new Map(entries.map(({ folder, chat }) => [chat, folder]));
     const chats = entries.map(({ chat }) => chat);
     const box = el('div', 'chatFoldersFolder chatFoldersPinned');
+    const current = currentChatRef();
+    box.classList.toggle(CURRENT_FOLDER, entries.some(({ folder, chat }) => folder.key === current?.key && chat.name === current.name));
     const head = el('div', 'chatFoldersHeader');
     head.tabIndex = 0;
     head.setAttribute('role', 'button');
@@ -1331,11 +1333,20 @@ function currentChatRef() {
 
 /**
  * Open the current chat's folder, the branches above it and its own branches (none of it saved), then scroll
- * it to the middle: once per chat, or every time with center.
+ * it to the middle: once per chat, or every time with center. A pinned chat is shown in the Pinned folder instead.
  */
 function revealCurrentChat(root, { center = false } = {}) {
     const current = currentChatRef();
-    const api = current && rootApis(root).get(current.key);
+    if (!current) return;
+    const apis = rootApis(root);
+    const pinned = apis.get(PIN_FOLDER_KEY);
+    if (pinned?.box.classList.contains(CURRENT_FOLDER)) {
+        pinned.setOpen(true, false);
+        const row = pinned.box.querySelector('.' + CURRENT_CHAT);
+        if (row) scrollToCurrent(row, current, center);
+        return;
+    }
+    const api = apis.get(current.key);
     if (!api) return;
     api.setOpen(true, false);
     const row = [...api.box.querySelectorAll('.chatFoldersChat')].find(r => r.dataset.chatName === current.name);
@@ -1345,6 +1356,10 @@ function revealCurrentChat(root, { center = false } = {}) {
         node.classList.add('open');
         syncBranchCaret(node);
     }
+    scrollToCurrent(row, current, center);
+}
+
+function scrollToCurrent(row, current, center) {
     const shown = `${current.key}\u0000${current.name}`;
     if (center || sidebarRevealed !== shown) {
         sidebarRevealed = shown;
@@ -1414,9 +1429,36 @@ function anyFolderOpen() {
     return !!st.__expandAll || folderRecordOpen(st);
 }
 
+/** The scroll box of a list, if it scrolls. */
+function scrollBoxOf(root) {
+    for (let node = root; node && node !== document.body; node = node.parentElement) {
+        if (/auto|scroll/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight) return node;
+    }
+    return null;
+}
+
+/** Remember the first row in view of each list, so it can be put back where it was after folders open. */
+function scrollAnchors() {
+    return [...folderApis.keys()].filter(root => root.isConnected).flatMap((root) => {
+        const box = scrollBoxOf(root);
+        if (!box) return [];
+        const top = box.getBoundingClientRect().top;
+        const row = [...root.querySelectorAll('.chatFoldersHeader, .chatFoldersChat')]
+            .find(r => r.offsetParent && r.getBoundingClientRect().bottom > top);
+        return row ? [{ box, row, at: row.getBoundingClientRect().top }] : [];
+    });
+}
+
+function restoreScrollAnchors(anchors) {
+    for (const { box, row, at } of anchors) {
+        if (row.isConnected) box.scrollTop += row.getBoundingClientRect().top - at;
+    }
+}
+
 function setEveryFolder(open) {
     const st = loadExpanded();
     const live = liveApis();
+    const anchors = open ? scrollAnchors() : [];
     if (live.length) {
         delete st.__expandAll;
         for (const [key, api] of live) {
@@ -1434,7 +1476,9 @@ function setEveryFolder(open) {
         }
     }
     saveExpanded(st);
-    if (sidebarRoot?.isConnected) revealCurrentChat(sidebarRoot, { center: true });
+    // Expanding keeps the view where it was; collapsing brings the open chat back into view.
+    if (open) restoreScrollAnchors(anchors);
+    else if (sidebarRoot?.isConnected) revealCurrentChat(sidebarRoot, { center: true });
     updateFloat();
 }
 
