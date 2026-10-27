@@ -154,8 +154,9 @@ body.chatfolders-float-home .chatFoldersSortRow-folders { padding-left: calc(var
 .chatFoldersChat.isPinned .chatFoldersPinMark { display: inline; }
 .chatFoldersPinAction.chatFoldersPinOn { opacity: 1; color: var(--SmartThemeQuoteColor); }
 .chatFoldersPinnedIcon { display: inline-flex; align-items: center; justify-content: center; width: 2em; color: var(--SmartThemeQuoteColor); }
-.chatFoldersPinnedAvatar { width: 1.6em; height: 1.6em; margin-right: 6px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
-i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
+/* scoped under the row so it beats ST's `.draggable img { width: 100%; height: 100% }` in the Top Bar sidebar */
+.chatFoldersChat .chatFoldersPinnedAvatar { width: 1.6em; height: 1.6em; margin-right: 6px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
+.chatFoldersChat i.chatFoldersPinnedAvatar { display: inline-block; width: auto; height: auto; }
 .chatFoldersPinnedChar { margin-right: 2px; }
 
 /* Column headers provide native buttons, so each list can sort without a dropdown. */
