@@ -905,10 +905,7 @@ function renderChat(folder, chat, depth, flat = false) {
 }
 
 function renderTree(folder, chats, depth, into, expanded = loadExpanded(), sortMode = 'recent') {
-    const sorted = sortMode.startsWith('name-')
-            ? [...chats].sort((a, b) => (sortMode === 'name-desc' ? -1 : 1) * owner.get(a).name.localeCompare(owner.get(b).name) || a.name.localeCompare(b.name))
-            : sortChatSiblings(chats, sortMode);
-        for (const chat of sorted) {
+    for (const chat of sortChatSiblings(chats, sortMode)) {
         const node = el('div', 'chatFoldersBranchNode');
         node.dataset.chat = chat.name;
         node.dataset.count = String(chat.children.length);

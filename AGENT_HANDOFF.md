@@ -31,3 +31,8 @@ Reload the SillyTavern browser page to load Chat Folders 1.8.1. Open an affected
 Implemented chat lorebook selectors in pinned conversations, independent pinned sorting (Character heading, character-name default), and persistent folder pin buttons. Pinned folders sort below pinned conversations and above ordinary folders. Existing .gitignore edits preserved and excluded from commit.
 Validation: node --test *.test.mjs: 40 passed, 2 skipped; module syntax check passed. Live browser validation pending; no deployment or push performed. Implementation self-reviewed; owner approval and main integration pending.
 NEXT ACTION: Check lorebook selection, independent sorting, and folder pin/unpin in the live UI before approval/integration.
+
+## Rendering regression correction
+The previous change accidentally inserted pinned-character sorting into renderTree, referencing an undefined owner map. Ordinary folders using name sorting could fail to render. Restored ordinary branch sorting and added executable renderTree regression checks for ascending, descending, and recent modes.
+Validation: 43 passed, 2 skipped; module syntax and diff whitespace checks passed. Live UI remains unverified. Correction saved locally; not pushed. Existing .gitignore edit remains excluded.
+NEXT ACTION: Publish the correction when authorized, then verify the affected folder view in SillyTavern.
