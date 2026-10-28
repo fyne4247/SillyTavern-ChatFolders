@@ -26,3 +26,8 @@ Implemented in 76d9097 and installed by fast-forwarding the local Chat Folders e
 ## NEXT ACTION
 
 Reload the SillyTavern browser page to load Chat Folders 1.8.1. Open an affected renamed chat and check that repeated opens create no additional book. Preserve existing duplicates pending a separate cleanup decision. If the issue persists, inspect only the affected chat header, selected book and receipt, plus listener ordering, without reading message content unnecessarily.
+
+## 2026-10-28 pinned folder enhancements
+Implemented chat lorebook selectors in pinned conversations, independent pinned sorting (Character heading, character-name default), and persistent folder pin buttons. Pinned folders sort below pinned conversations and above ordinary folders. Existing .gitignore edits preserved and excluded from commit.
+Validation: node --test *.test.mjs: 40 passed, 2 skipped; module syntax check passed. Live browser validation pending; no deployment or push performed. Implementation self-reviewed; owner approval and main integration pending.
+NEXT ACTION: Check lorebook selection, independent sorting, and folder pin/unpin in the live UI before approval/integration.

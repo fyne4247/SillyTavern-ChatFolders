@@ -89,7 +89,7 @@ function sortHeaderButton(label, ascending, descending, defaultMode, current, on
 }
 
 function sortHeaderRow(scope, current, onChange) {
-    const row = el('div', `chatFoldersSortRow chatFoldersSortRow-${scope}`);
+    const row = el('div', `chatFoldersSortRow chatFoldersSortRow-${scope === 'pinned' ? 'chats' : scope}`);
     const add = (label, ascending, descending, defaultMode) => row.append(sortHeaderButton(label, ascending, descending, defaultMode, current, onChange));
     const addLore = () => {
         add('Lorebook', 'lore-asc', 'lore-desc', 'lore-asc');
@@ -104,7 +104,7 @@ function sortHeaderRow(scope, current, onChange) {
         add('Last active', 'oldest', 'recent', 'recent');
         row.append(el('span', 'chatFoldersSortSpacer'));
     } else {
-        add('Branch', 'name-asc', 'name-desc', 'name-asc');
+        add(scope === 'pinned' ? 'Character' : 'Branch', 'name-asc', 'name-desc', 'name-asc');
         addLore();
         row.append(el('span', 'chatFoldersSortSpacer chatFoldersSortThreadSpacer'));
         add('Messages', 'messages-asc', 'messages-desc', 'messages-desc');
@@ -122,7 +122,7 @@ function setSharedChatSort(value) {
     settings().chatSort = value;
     saveSettingsDebounced();
     rowGestures.dispose();
-    for (const [, api] of liveApis()) api.applyChatSort(value);
+    for (const [, api] of liveApis()) if (api.folder) api.applyChatSort(value);
 }
 const enhanced = new WeakSet();
 const panelRuns = new WeakMap();
@@ -852,7 +852,7 @@ function renderChat(folder, chat, depth, flat = false) {
         if (event.detail <= 1) go();
     });
     name.append(link);
-    const lore = folder.kind === 'character' && !flat
+    const lore = folder.kind === 'character'
         ? lorebookSelect(chat.lorebook, 'Chat lorebook', chat.name, (n) => setChatLorebook(folder, chat, n), { folder, chat })
         : el('span');
     const meta = el('div', 'chatFoldersMeta');
@@ -905,7 +905,10 @@ function renderChat(folder, chat, depth, flat = false) {
 }
 
 function renderTree(folder, chats, depth, into, expanded = loadExpanded(), sortMode = 'recent') {
-    for (const chat of sortChatSiblings(chats, sortMode)) {
+    const sorted = sortMode.startsWith('name-')
+            ? [...chats].sort((a, b) => (sortMode === 'name-desc' ? -1 : 1) * owner.get(a).name.localeCompare(owner.get(b).name) || a.name.localeCompare(b.name))
+            : sortChatSiblings(chats, sortMode);
+        for (const chat of sorted) {
         const node = el('div', 'chatFoldersBranchNode');
         node.dataset.chat = chat.name;
         node.dataset.count = String(chat.children.length);
@@ -982,7 +985,15 @@ function renderFolder(folder, expandedState, apis) {
         stat('<i class="fa-solid fa-comment fa-xs"></i>', folder.messages, 'Total messages'),
         date,
     );
-    head.append(carets, folderAvatar(folder), info, lore, meta, el('span', 'chatFoldersSpacer'));
+    const folderPin = actionButton('fa-thumbtack', settings().pinnedFolders?.includes(folder.key) ? 'Unpin folder' : 'Pin folder', () => {
+        const pins = new Set(settings().pinnedFolders || []);
+        if (pins.has(folder.key)) pins.delete(folder.key); else pins.add(folder.key);
+        settings().pinnedFolders = [...pins];
+        saveSettingsDebounced();
+        for (const [host, items] of pinHosts) renderInto(host, items);
+    });
+    folderPin.classList.toggle('isPinned', !!settings().pinnedFolders?.includes(folder.key));
+    head.append(carets, folderAvatar(folder), info, lore, meta, folderPin);
     const onAll = (event) => {
         event.stopPropagation();
         event.preventDefault();
@@ -1056,7 +1067,7 @@ function pinnedAvatar(folder) {
     return img;
 }
 
-/** The Pinned folder: every pinned chat from every character, flat, ordered by the shared chat sort. */
+/** The Pinned folder: every pinned chat from every character, flat, ordered by its independent sort. */
 function renderPinnedFolder(entries, expandedState, apis) {
     const owner = new Map(entries.map(({ folder, chat }) => [chat, folder]));
     const chats = entries.map(({ chat }) => chat);
@@ -1085,13 +1096,22 @@ function renderPinnedFolder(entries, expandedState, apis) {
 
     const body = el('div', 'chatFoldersBody');
     const tree = el('div', 'chatFoldersTree');
-    let sortMode = settings().chatSort;
-    const sortHead = sortHeaderRow('chats', sortMode, setSharedChatSort);
+    let sortMode = settings().pinnedSort || 'name-asc';
+    const sortHead = sortHeaderRow('pinned', sortMode, (value) => {
+        settings().pinnedSort = value;
+        saveSettingsDebounced();
+        for (const [key, api] of liveApis()) {
+            if (!api.folder) api.applyChatSort(value);
+        }
+    });
     body.append(sortHead, tree);
     let filled = false;
     const fill = () => {
         tree.replaceChildren();
-        for (const chat of sortChatSiblings(chats, sortMode)) {
+        const sorted = sortMode.startsWith('name-')
+            ? [...chats].sort((a, b) => (sortMode === 'name-desc' ? -1 : 1) * owner.get(a).name.localeCompare(owner.get(b).name) || a.name.localeCompare(b.name))
+            : sortChatSiblings(chats, sortMode);
+        for (const chat of sorted) {
             const node = el('div', 'chatFoldersBranchNode');
             node.dataset.chat = chat.name;
             node.append(renderChat(owner.get(chat), chat, 0, true));
@@ -1142,6 +1162,11 @@ function characterLoreTags(folder) {
     return tags;
 }
 
+function orderedFolders(folders, mode) {
+    const pins = new Set(settings().pinnedFolders || []);
+    return sortFolders(folders, mode, folderBook).sort((a, b) => Number(pins.has(b.key)) - Number(pins.has(a.key)));
+}
+
 function renderInto(root, folders) {
     rowGestures.dispose();
     for (const old of folderApis.keys()) if (!old.isConnected) folderApis.delete(old);
@@ -1160,7 +1185,7 @@ function renderInto(root, folders) {
         s.folderSort = FOLDER_SORTS.includes(value) ? value : 'recent';
         saveSettingsDebounced();
         syncSortHeader(folderSortHead, s.folderSort);
-        for (const folder of sortFolders(folders, s.folderSort, folderBook)) {
+        for (const folder of orderedFolders(folders, s.folderSort)) {
             const api = apis.get(folder.key);
             if (api) root.append(api.box);
         }
@@ -1170,7 +1195,7 @@ function renderInto(root, folders) {
     pinnedNow = pinnedKeys();
     if (!folders.length) { root.append(el('div', 'chatFoldersEmpty', 'No chats')); applyFloatPosition(); return; }
     const expanded = loadExpanded();
-    for (const folder of sortFolders(folders, settings().folderSort, folderBook)) root.append(renderFolder(folder, expanded, apis));
+    for (const folder of orderedFolders(folders, settings().folderSort)) root.append(renderFolder(folder, expanded, apis));
     renderPinned(root, folders, expanded);
     applyFloatPosition();
 }
