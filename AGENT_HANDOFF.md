@@ -6,7 +6,9 @@ Routine fix on `fix/folder-pin-highlight`, baseline `0709c05`. Folder pin contro
 
 Verification: 43 Node tests passed, 2 optional Memory Books integrations skipped; module syntax and diff whitespace checks passed. Self-reviewed only; live browser appearance remains unverified. No deployment, main merge or push performed.
 
-NEXT ACTION: Load the updated extension in SillyTavern and verify folder pin/unpin color changes in the main view and sidebar. Merge after owner approval; do not push without an explicit request.
+Owner approved merge and push. Main was fast-forwarded to implementation `7ac246d`; publication to origin/main is authorized. Live browser appearance remains unverified and no installation/deployment is included.
+
+NEXT ACTION: Verify origin/main matches the published local main, then load the updated extension in SillyTavern and verify folder pin/unpin color changes in the main view and sidebar.
 
 ## Objective and scope
 
