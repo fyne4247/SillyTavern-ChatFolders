@@ -1,5 +1,13 @@
 # Branch reopen compatibility fix
 
+## 2026-10-29 folder pin highlight fix
+
+Routine fix on `fix/folder-pin-highlight`, baseline `0709c05`. Folder pin controls now use the existing chat pin highlight classes and expose `aria-pressed`, so pinned folders show the theme accent at full opacity and unpinned folders return to the normal style. Existing `isPinned` marker and persistence remain intact. Preexisting `.gitignore` changes are untouched and excluded.
+
+Verification: 43 Node tests passed, 2 optional Memory Books integrations skipped; module syntax and diff whitespace checks passed. Self-reviewed only; live browser appearance remains unverified. No deployment, main merge or push performed.
+
+NEXT ACTION: Load the updated extension in SillyTavern and verify folder pin/unpin color changes in the main view and sidebar. Merge after owner approval; do not push without an explicit request.
+
 ## Objective and scope
 
 Stop repeat Memory Books copies when opening previously renamed chats. Chat and exclusive lorebook must still rename together. Change only Chat Folders; preserve user data and Memory Books source. Routine task, no phase workflow or delegated review.

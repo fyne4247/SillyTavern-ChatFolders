@@ -989,7 +989,11 @@ function renderFolder(folder, expandedState, apis) {
         saveSettingsDebounced();
         for (const [host, items] of pinHosts) renderInto(host, items);
     });
-    folderPin.classList.toggle('isPinned', !!settings().pinnedFolders?.includes(folder.key));
+    const folderPinned = !!settings().pinnedFolders?.includes(folder.key);
+    folderPin.classList.add('chatFoldersPinAction');
+    folderPin.classList.toggle('isPinned', folderPinned);
+    folderPin.classList.toggle('chatFoldersPinOn', folderPinned);
+    folderPin.setAttribute('aria-pressed', String(folderPinned));
     head.append(carets, folderAvatar(folder), info, lore, meta, folderPin);
     const onAll = (event) => {
         event.stopPropagation();
